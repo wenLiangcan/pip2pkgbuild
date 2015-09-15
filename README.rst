@@ -82,7 +82,7 @@ Examples
 
        $ pip2pkgbuild django -p python2 -n django
 
-* Generate ``PKGBUILD`` for ``Flask``, containing both Python 2 and 3 packages with ``pkgbase`` "pip2pkgbuild":
+* Generate ``PKGBUILD`` for ``Flask``, containing both Python 2 and 3 packages with ``pkgbase`` "flask":
     .. code-block:: shell
 
        $ pip2pkgbuild flask -p multi -b flask
