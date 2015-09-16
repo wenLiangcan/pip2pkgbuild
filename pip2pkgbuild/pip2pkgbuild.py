@@ -14,7 +14,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.1.1',
+    'version': '0.1.2',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -365,7 +365,7 @@ def main():
     pkgbuild = packager.generate()
 
     if args.print_out:
-        print(pkgbuild)
+        sys.stdout.write(pkgbuild)
     else:
         with open('PKGBUILD', 'w') as f:
             f.write(pkgbuild)

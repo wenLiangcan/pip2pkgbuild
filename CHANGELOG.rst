@@ -2,6 +2,12 @@ Changelog
 =========
 
 
+0.1.2 (2015-09-16)
+------------------
+
+- Improve Python 2 compatibility
+
+
 0.1.1 (2015-09-15)
 ------------------
 
@@ -12,3 +18,4 @@ Changelog
 ------------------
 
 - Initial release
+
