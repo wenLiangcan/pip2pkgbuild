@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 
-if sys.version_info[0] == 2:
+if sys.version_info.major == 2:
     from urllib2 import urlopen, HTTPError
 else:
     from urllib.request import urlopen
@@ -14,7 +14,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.1.3',
+    'version': '0.1.4',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -184,7 +184,7 @@ class Packager(object):
         """
         self.module = module
 
-        self.python = 'python'
+        self.python = 'python2' if sys.version_info.major == 2 else 'python'
         if python in ['python', 'python2', 'multi']:
             self.python = python
 
