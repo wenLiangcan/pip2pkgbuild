@@ -45,7 +45,6 @@ setup(
     ],
 
     keywords='Packaging ArchLinux PKGBUILD',
-    zip_safe=False,
     packages=find_packages(),
     entry_points={
         'console_scripts': [
