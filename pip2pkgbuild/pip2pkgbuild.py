@@ -85,6 +85,16 @@ def iter_to_str(i):
     return ' '.join(map(lambda n: "'{}'".format(n), i))
 
 
+def dict_get(d, key, default):
+    """
+    :type d: dict
+    :type default T
+    :rtype: T
+    """
+    value = d.get(key)
+    return value if isinstance(value, type(default)) else default
+
+
 class PythonModuleNotFoundError(Exception):
     pass
 class ParseModuleInfoError(Exception):
@@ -105,8 +115,8 @@ class PyModule(object):
             self.url = info['home_page']
             self.license = self._get_license(info)
             src_info = self._get_src_info(json_data['urls'])
-            self.source = self._get_source(src_info.get('url', ''))
-            self.checksums = src_info.get('md5_digest', '')
+            self.source = self._get_source(dict_get(src_info, 'url', ''))
+            self.checksums = dict_get(src_info, 'md5_digest', '')
         except KeyError as e:
             raise ParseModuleInfoError(e)
 
@@ -121,11 +131,11 @@ class PyModule(object):
             return search_in_iter(recognized_licenses(), p)
 
         license_ = find_recognized(
-            lambda recg: recg.lower() == info.get('license', '').lower())
+            lambda recg: recg.lower() == dict_get(info, 'license', '').lower())
 
         if license_ is None:
             license_str = search_in_iter(
-                info.get('classifiers', []),
+                dict_get(info, 'classifiers', []),
                 lambda clsf: clsf.startswith('License'))
 
             if license_str is None:
@@ -149,10 +159,10 @@ class PyModule(object):
             return {}
 
         info = search_in_iter(urls,
-                              lambda l: l.get('url', '').endswith('.tar.gz'))
+                              lambda l: dict_get(l, 'url', '').endswith('.tar.gz'))
         if info is None:
             info = search_in_iter(urls,
-                                  lambda l: not l.get('url', '').endswith('.whl'))
+                                  lambda l: not dict_get(l, 'url', '').endswith('.whl'))
         if info is None:
             info = urls[0]
         return info
