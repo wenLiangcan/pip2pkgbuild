@@ -2,6 +2,12 @@ Changelog
 =========
 
 
+0.2.0 (2016-05-21)
+------------------
+
+- Move package build process into build() function
+
+
 0.1.5 (2015-10-06)
 ------------------
 

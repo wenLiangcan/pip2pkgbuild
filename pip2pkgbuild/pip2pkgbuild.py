@@ -14,7 +14,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.1.5',
+    'version': '0.2.0',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -46,11 +46,21 @@ prepare() {
 }
 """
 
+BUILD_FUNC = """\
+build() {{
+{statements}
+}}
+"""
+
+BUILD_STATEMENTS = """\
+    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+    {python} setup.py build"""
+
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{
     depends+=({depends})
     cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
-    {python} setup.py install --root="${{pkgdir}}" --optimize=1
+    {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build
 }}
 """
 
@@ -97,6 +107,8 @@ def dict_get(d, key, default):
 
 class PythonModuleNotFoundError(Exception):
     pass
+
+
 class ParseModuleInfoError(Exception):
     pass
 
@@ -233,6 +245,27 @@ class Packager(object):
         self.pkgbase = pkgbase or (
             self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
 
+    @staticmethod
+    def gen_build_func(python):
+        def gen_statements(py):
+            if python == 'multi' and py == 'python2':
+                suffix = '-python2'
+            else:
+                suffix = ''
+            return BUILD_STATEMENTS.format(
+                suffix=suffix,
+                python=py
+            )
+
+        if python == 'multi':
+            pylist = ['python', 'python2']
+        else:
+            pylist = [python]
+
+        return BUILD_FUNC.format(
+            statements='\n\n'.join(map(gen_statements, pylist))
+        )
+
     def generate(self):
         """
         :rtype: str
@@ -254,6 +287,8 @@ class Packager(object):
         )
         pkgbuild.append(headers)
 
+        build_fun = self.gen_build_func(self.python)
+
         if self.python == 'multi':
             package_fun = PACKAGE_FUNC.format(
                 sub_pkgname='_'+self.py_pkgname,
@@ -269,7 +304,7 @@ class Packager(object):
                 python='python2'
             )
 
-            pkgbuild += [PREPARE_FUNC, package_fun, py2_package_fun]
+            pkgbuild += [PREPARE_FUNC, build_fun, package_fun, py2_package_fun]
         else:
             package_fun = PACKAGE_FUNC.format(
                 sub_pkgname='',
@@ -277,7 +312,7 @@ class Packager(object):
                 suffix='',
                 python=self.python
             )
-            pkgbuild.append(package_fun)
+            pkgbuild += [build_fun, package_fun]
 
         return '\n'.join(pkgbuild)
 
