@@ -2,6 +2,12 @@ Changelog
 =========
 
 
+0.2.1 (2016-05-22)
+------------------
+
+- Handle specified version of Python module not be found
+
+
 0.2.0 (2016-05-21)
 ------------------
 

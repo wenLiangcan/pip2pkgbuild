@@ -14,7 +14,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.2.0',
+    'version': '0.2.1',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -23,6 +23,9 @@ logging.basicConfig(
     format="[%(levelname)s] : %(message)s"
 )
 LOG = logging.getLogger('log')
+
+MODULE_JSON = 'http://pypi.python.org/pypi/{name}/json'
+VERSION_MODULE_JSON = 'http://pypi.python.org/pypi/{name}/{version}/json'
 
 HEADERS = """\
 pkgbase=('{pkgbase}')
@@ -106,6 +109,10 @@ def dict_get(d, key, default):
 
 
 class PythonModuleNotFoundError(Exception):
+    pass
+
+
+class PythonModuleVersionNotFoundError(Exception):
     pass
 
 
@@ -322,15 +329,22 @@ def fetch_pymodule(name, version=""):
     :type name: str
     :rtype: PyModule
     """
-    if version:
-        url = 'http://pypi.python.org/pypi/{name}/{version}/json'.format(name=name, version=version)
-    else:
-        url = 'http://pypi.python.org/pypi/{name}/json'.format(name=name)
+    def fetch_json(url):
+        return json.loads(urlopen(url).read().decode('utf-8'))
+
     try:
-        info = json.loads(urlopen(url).read().decode('utf-8'))
+        url = MODULE_JSON.format(name=name)
+        info = fetch_json(url)
+        if version:
+            if info['releases'].get(version) is None:
+                raise PythonModuleVersionNotFoundError("{} {}".format(name, version))
+            else:
+                url = VERSION_MODULE_JSON.format(name=name, version=version)
+                info = fetch_json(url)
+
     except HTTPError as e:
         if e.code == 404:
-            raise PythonModuleNotFoundError("{} {}".format(name, version).strip())
+            raise PythonModuleNotFoundError("{}".format(name))
         else:
             raise e
     return PyModule(info)
@@ -388,6 +402,9 @@ def main():
         module = fetch_pymodule(args.module, args.module_version)
     except PythonModuleNotFoundError as e:
         LOG.error("Python module not found: {}".format(e))
+        sys.exit(0)
+    except PythonModuleVersionNotFoundError as e:
+        LOG.error("Python module version not found: {}".format(e))
         sys.exit(0)
     except ParseModuleInfoError as e:
         LOG.error("Failed to parse Python module information: {}".format(e))
