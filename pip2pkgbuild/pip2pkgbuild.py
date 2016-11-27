@@ -14,7 +14,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.2.1',
+    'version': '0.2.2',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -42,6 +42,10 @@ arch=('any')
 source=("{source}")
 md5sums=('{checksums}')
 """
+
+SOURCE_TARGZ = ("https://files.pythonhosted.org/packages/source/"
+                "$(echo ${_module:0:1} | tr '[:upper:]' '[:lower:]')/"
+                "${_module}/${_module}-${pkgver}.tar.gz")
 
 PREPARE_FUNC = """\
 prepare() {
@@ -191,7 +195,10 @@ class PyModule(object):
         :type url: str
         :rtype: str
         """
-        l = url.replace(self.pkgver, "${pkgver}")
+        if url.endswith('.tar.gz'):
+            l = SOURCE_TARGZ
+        else:
+            l = url.replace(self.pkgver, "${pkgver}")
         return l
 
 

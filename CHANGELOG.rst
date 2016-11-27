@@ -2,6 +2,12 @@ Changelog
 =========
 
 
+0.2.2 (2016-11-27)
+------------------
+
+- Use "https://files.pythonhosted.org/" based source URL
+
+
 0.2.1 (2016-05-22)
 ------------------
 
