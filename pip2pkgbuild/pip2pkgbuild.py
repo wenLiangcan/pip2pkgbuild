@@ -1,14 +1,23 @@
 #!/usr/bin/python
 
+# json returns unicode strings
+# which causes problems for `dict_get` in python2
+from __future__ import unicode_literals
+
 import argparse
 import json
 import logging
 import os
+import re
 import sys
+import tarfile
+import zipfile
 
 if sys.version_info.major == 2:
+    from cStringIO import StringIO as BytesIO
     from urllib2 import urlopen, HTTPError
 else:
+    from io import BytesIO
     from urllib.request import urlopen
     from urllib.error import HTTPError
 
@@ -71,6 +80,9 @@ package{sub_pkgname}() {{
 }}
 """
 
+# Double escape since INSTALL_LICENSE is interpolated twice
+INSTALL_LICENSE = """    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/${{{{_module}}}}-${{{{pkgver}}}}/LICENSE\n"""
+
 
 def recognized_licenses():
     """
@@ -112,6 +124,17 @@ def dict_get(d, key, default):
     return value if isinstance(value, type(default)) else default
 
 
+def insert_into_string(string, new_string, i):
+    """Insert `new_string` into `string` at index `i`
+
+    :type string: str
+    :type new_string: str
+    :type i: int
+    :rtype: str
+    """
+    return string[:i] + new_string + string[i:]
+
+
 class PythonModuleNotFoundError(Exception):
     pass
 
@@ -140,8 +163,68 @@ class PyModule(object):
             src_info = self._get_src_info(json_data['urls'])
             self.source = self._get_source(dict_get(src_info, 'url', ''))
             self.checksums = dict_get(src_info, 'md5_digest', '')
+            self.compressed_obj = self._download_source(
+                src_info.get('url'))
+            self.license_path = self._find_license_path(self.compressed_obj)
         except KeyError as e:
             raise ParseModuleInfoError(e)
+
+    @staticmethod
+    def _download_source(url):
+        """Download compressed file at `url` into a compressed object.
+
+        The url should contain the source of the python module.
+        :type url: str
+        :rtype: CompressedFacade
+        """
+        if not url:
+            LOG.warning("Given url was empty")
+            return None
+        # Check to see if the file is a tarfile.
+        # Unfortunately, splitext only works for files
+        # with single extensions
+        filename = os.path.basename(url)
+        # Accept .tar.gz and .tar.gz files
+        tar_match = re.match(".*\.tar\.(?:gz|bz2)", filename, re.I)
+        zip_match = filename.lower().endswith('.zip')
+        if not tar_match and not zip_match:
+            LOG.warning("Source url('%s') "
+                        "did not have a zip or tar extension", url)
+            return None
+        try:
+            http_response = urlopen(url)
+        except HTTPError as e:
+            LOG.error("Could not retrieve python package for "
+                      "license inspection from %s with error %s", url, e)
+            return None
+        if tar_match:
+            # The mode needs to be 'r|*', (any type of tarball) which
+            # tells tarfile that It should not attempt to
+            # seek() or tell() the given
+            # object since HTTPResponse doesn't support those operations
+            compressed_obj = tarfile.open(fileobj=http_response, mode='r|*')
+        elif zip_match:
+            compressed_obj = zipfile.ZipFile(BytesIO(http_response.read()))
+        compressed_facade = CompressedFacade(compressed_obj)
+        return compressed_facade
+
+    @staticmethod
+    def _find_license_path(compressed_obj):
+        """Determine whether the package source contains a physical license.
+
+        :type url: str
+        :rtype: bool
+        """
+        if compressed_obj is None:
+            return None
+        find_license = re.compile(".*/LICENSE(?:\.txt)$")
+        for name in compressed_obj.get_file_listing():
+            match = find_license.match(name, re.I)
+            if match:
+                # Remove the subfolder name from the match
+                return ''.join(match.group(0).split('/')[1:])
+        return None
+
 
     # https://wiki.archlinux.org/index.php/PKGBUILD#license
     @staticmethod
@@ -200,6 +283,36 @@ class PyModule(object):
         else:
             l = url.replace(self.pkgver, "${pkgver}")
         return l
+
+
+class CompressedFacade(object):
+    """Unify the `tarfile` and `zipfile` interface."""
+    ZIPFILE = 1
+    TARFILE = 2
+    def __init__(self, obj):
+        """
+        :type obj: tarfile.TarFile | tarfile.ZipFile
+        """
+        self.obj = obj
+        if isinstance(obj, tarfile.TarFile):
+            self.compressed_type = CompressedFacade.TARFILE
+        elif isinstance(obj, zipfile.ZipFile):
+            self.compressed_type = CompressedFacade.ZIPFILE
+        else:
+            raise ValueError("Given object(%s) not a tar or zipfile", obj)
+
+    def get_file_listing(self):
+        """Return the files present inside of the archive.
+
+        Note tarfile lists the base directory in getnames while
+        zipfile does not it its method.
+
+        :rtype: list[str]
+        """
+        if self.compressed_type == CompressedFacade.TARFILE:
+            return self.obj.getnames()
+        else:
+            return self.obj.namelist()
 
 
 class Packager(object):
@@ -301,17 +414,25 @@ class Packager(object):
         )
         pkgbuild.append(headers)
 
+        package_func = PACKAGE_FUNC
+        if self.module.license_path:
+            i = package_func.index("    {python} setup.py install")
+            package_func = insert_into_string(
+                package_func,
+                INSTALL_LICENSE.format(license_path=self.module.license_path),
+                i,
+            )
+
         build_fun = self.gen_build_func(self.python)
 
         if self.python == 'multi':
-            package_fun = PACKAGE_FUNC.format(
+            package_fun = package_func.format(
                 sub_pkgname='_'+self.py_pkgname,
                 depends=iter_to_str(self.py3_depends),
                 suffix='',
                 python='python'
             )
-
-            py2_package_fun = PACKAGE_FUNC.format(
+            py2_package_fun = package_func.format(
                 sub_pkgname='_'+self.py2_pkgname,
                 depends=iter_to_str(self.py2_depends),
                 suffix='-python2',
@@ -320,7 +441,7 @@ class Packager(object):
 
             pkgbuild += [PREPARE_FUNC, build_fun, package_fun, py2_package_fun]
         else:
-            package_fun = PACKAGE_FUNC.format(
+            package_fun = package_func.format(
                 sub_pkgname='',
                 depends='',
                 suffix='',
