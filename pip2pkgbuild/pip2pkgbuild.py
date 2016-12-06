@@ -81,7 +81,7 @@ package{sub_pkgname}() {{
 """
 
 # Double escape since INSTALL_LICENSE is interpolated twice
-INSTALL_LICENSE = """    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/${{{{_module}}}}-${{{{pkgver}}}}/LICENSE\n"""
+INSTALL_LICENSE = """    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/${{{{_module}}}}-${{{{pkgver}}}}/LICENSE\n""""
 
 
 def recognized_licenses():
