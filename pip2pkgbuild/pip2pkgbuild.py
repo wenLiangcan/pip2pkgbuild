@@ -27,6 +27,8 @@ LOG = logging.getLogger('log')
 MODULE_JSON = 'http://pypi.python.org/pypi/{name}/json'
 VERSION_MODULE_JSON = 'http://pypi.python.org/pypi/{name}/{version}/json'
 
+MAINTINER_LINE = "# Maintainer: {name} <{email}>\n"
+
 HEADERS = """\
 pkgbase=('{pkgbase}')
 pkgname=({pkgname})
@@ -206,7 +208,7 @@ class Packager(object):
 
     def __init__(self, module, python=None, depends=None, py2_depends=None,
                  py3_depends=None, mkdepends=None, pkgbase=None, pkgname=None,
-                 py2_pkgname=None):
+                 py2_pkgname=None, email=None, name=None):
         """
         :type module: PyModule
         :type python: str
@@ -217,8 +219,12 @@ class Packager(object):
         :type pkgbase: str
         :type pkgname: str
         :type py2_pkgname: str
+        :type name: str
+        :type email: str
         """
         self.module = module
+        self.name = name
+        self.email = email
 
         self.python = 'python2' if sys.version_info.major == 2 else 'python'
         if python in ['python', 'python2', 'multi']:
@@ -299,6 +305,11 @@ class Packager(object):
             source=self.module.source,
             checksums=self.module.checksums
         )
+        if self.name and self.email:
+            maintainer_line = MAINTINER_LINE.format(
+                name=self.name, email=self.email)
+            headers = maintainer_line + headers
+
         pkgbuild.append(headers)
 
         build_fun = self.gen_build_func(self.python)
@@ -403,7 +414,16 @@ def main():
                            help='Print on screen rather than saving to PKGBUILD file')
     argparser.add_argument('-V', '--version',
                            action='version', version='%(prog)s {}'.format(META['version']))
+    argparser.add_argument('--name', dest='name', default=None,
+                           help="Your full name for the package maintainer "
+                                "line e.g. 'yourFirstName yourLastName'")
+    argparser.add_argument('--email', dest='email', default=None,
+                           help="Your email for the package maintainer line")
     args = argparser.parse_args()
+
+    if bool(args.email) != bool(args.name):
+        LOG.error("Must supply both email and name or neither.")
+        sys.exit(1)
 
     try:
         module = fetch_pymodule(args.module, args.module_version)
