@@ -1,14 +1,23 @@
 #!/usr/bin/python
 
+# json returns unicode strings
+# which causes problems for `dict_get` in python2
+from __future__ import unicode_literals
+
 import argparse
 import json
 import logging
 import os
+import re
 import sys
+import tarfile
+import zipfile
 
 if sys.version_info.major == 2:
+    from cStringIO import StringIO as BytesIO
     from urllib2 import urlopen, HTTPError
 else:
+    from io import BytesIO
     from urllib.request import urlopen
     from urllib.error import HTTPError
 
@@ -26,6 +35,8 @@ LOG = logging.getLogger('log')
 
 MODULE_JSON = 'http://pypi.python.org/pypi/{name}/json'
 VERSION_MODULE_JSON = 'http://pypi.python.org/pypi/{name}/{version}/json'
+
+MAINTINER_LINE = "# Maintainer: {name} <{email}>\n"
 
 HEADERS = """\
 pkgbase=('{pkgbase}')
@@ -71,6 +82,10 @@ package{sub_pkgname}() {{
 }}
 """
 
+# Double escape since INSTALL_LICENSE is interpolated twice
+INSTALL_LICENSE = """    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/{{py_pkgname}}/{license_name}"
+"""
+
 
 def recognized_licenses():
     """
@@ -112,6 +127,17 @@ def dict_get(d, key, default):
     return value if isinstance(value, type(default)) else default
 
 
+def insert_into_string(string, new_string, i):
+    """Insert `new_string` into `string` at index `i`
+
+    :type string: str
+    :type new_string: str
+    :type i: int
+    :rtype: str
+    """
+    return string[:i] + new_string + string[i:]
+
+
 class PythonModuleNotFoundError(Exception):
     pass
 
@@ -125,7 +151,7 @@ class ParseModuleInfoError(Exception):
 
 
 class PyModule(object):
-    def __init__(self, json_data):
+    def __init__(self, json_data, find_license):
         """
         :type json_data: dict
         """
@@ -140,8 +166,90 @@ class PyModule(object):
             src_info = self._get_src_info(json_data['urls'])
             self.source = self._get_source(dict_get(src_info, 'url', ''))
             self.checksums = dict_get(src_info, 'md5_digest', '')
+            self.compressed_source = None
+            self.license_path = None
+            if find_license:
+                self.compressed_source = self._download_source(
+                    src_info.get('url'))
+                self.license_path = self._find_license_path(
+                    self.compressed_source)
         except KeyError as e:
             raise ParseModuleInfoError(e)
+
+    @staticmethod
+    def _download_source(url):
+        """Download compressed file at `url` into a compressed object.
+
+        The url should contain the source of the python module.
+        :type url: str
+        :rtype: CompressedFacade|None
+        """
+        if not url:
+            LOG.warning("Given url was empty")
+            return None
+        # Check to see if the file is a tarfile.
+        # Unfortunately, splitext only works for files
+        # with single extensions
+        filename = os.path.basename(url)
+        # Accept .tar.gz and .tar.gz files
+        tar_match = re.match(".*\.tar\.(?:gz|bz2)", filename, re.I)
+        zip_match = filename.lower().endswith('.zip')
+        if not tar_match and not zip_match:
+            LOG.warning("Source url('%s') "
+                        "did not have a zip or tar extension", url)
+            return None
+        try:
+            http_response = urlopen(url)
+        except HTTPError as e:
+            LOG.error("Could not retrieve python package for "
+                      "license inspection from %s with error %s", url, e)
+            return None
+        if tar_match:
+            # The mode needs to be 'r|*', (any type of tarball) which
+            # tells tarfile that It should not attempt to
+            # seek() or tell() the given
+            # object since HTTPResponse doesn't support those operations
+            compressed_source = tarfile.open(fileobj=http_response, mode='r|*')
+        elif zip_match:
+            compressed_source = zipfile.ZipFile(BytesIO(http_response.read()))
+        compressed_facade = CompressedFacade(compressed_source)
+        return compressed_facade
+
+    @staticmethod
+    def _find_license_path(compressed_source):
+        """Determine whether the package source contains a physical license.
+
+        :type url: str
+        :rtype: bool|None
+        """
+        if compressed_source is None:
+            return None
+        # LICENSE
+        # LICENSE.txt
+        # license.txt
+        # LICENSES.txt
+        # license
+        find_license = re.compile(".*/LICENSES?(?:\.txt|)$")
+        files = compressed_source.get_file_listing()
+
+        def depth(path):
+            """Depth of a file path.
+
+            :type path: str
+            :rtype: int
+            """
+            return path.count("/")
+
+        # Prefer license matches closer to the root
+        sorted_files = sorted(files, key=depth)
+        for file_path in sorted_files:
+            match = find_license.match(file_path, re.I)
+            if match:
+                # Remove the subfolder file_path from the match
+                # Note: path separators inside a zipfile are always '/'
+                return ''.join(match.group(0).split('/')[1:])
+        LOG.warning("Could not find license file.")
+        return None
 
     # https://wiki.archlinux.org/index.php/PKGBUILD#license
     @staticmethod
@@ -202,11 +310,45 @@ class PyModule(object):
         return l
 
 
+class CompressedFacade(object):
+    """Unify the `tarfile` and `zipfile` interface."""
+    ZIPFILE = 1
+    TARFILE = 2
+
+    def __init__(self, obj):
+        """
+        :type obj: tarfile.TarFile | tarfile.ZipFile
+        """
+        self.obj = obj
+        if isinstance(obj, tarfile.TarFile):
+            self.compressed_type = CompressedFacade.TARFILE
+        elif isinstance(obj, zipfile.ZipFile):
+            self.compressed_type = CompressedFacade.ZIPFILE
+        else:
+            raise ValueError("Given object(%s) not a tar or zipfile", obj)
+
+    def get_file_listing(self):
+        """Return the files present inside of the archive.
+
+        Note tarfile lists the base directory in getnames while
+        zipfile does not it its method.
+
+        :rtype: list[str]
+        """
+        if self.compressed_type == CompressedFacade.TARFILE:
+            return [tar_info.name for
+                    tar_info in self.obj.getmembers() if not tar_info.isdir()]
+        else:
+            # Remove directories from list
+            return [name for
+                    name in self.obj.namelist() if not name.endswith("/")]
+
+
 class Packager(object):
 
     def __init__(self, module, python=None, depends=None, py2_depends=None,
                  py3_depends=None, mkdepends=None, pkgbase=None, pkgname=None,
-                 py2_pkgname=None):
+                 py2_pkgname=None, email=None, name=None):
         """
         :type module: PyModule
         :type python: str
@@ -217,8 +359,12 @@ class Packager(object):
         :type pkgbase: str
         :type pkgname: str
         :type py2_pkgname: str
+        :type name: str
+        :type email: str
         """
         self.module = module
+        self.name = name
+        self.email = email
 
         self.python = 'python2' if sys.version_info.major == 2 else 'python'
         if python in ['python', 'python2', 'multi']:
@@ -299,20 +445,42 @@ class Packager(object):
             source=self.module.source,
             checksums=self.module.checksums
         )
+        if self.name and self.email:
+            maintainer_line = MAINTINER_LINE.format(
+                name=self.name, email=self.email)
+            headers = maintainer_line + headers
+
         pkgbuild.append(headers)
+
+        package_func = PACKAGE_FUNC
+        if self.module.license_path:
+            # Location at which to incest the license installation step.
+            i = package_func.index("    {python} setup.py install")
+            license_path = self.module.license_path
+            license_command = INSTALL_LICENSE.format(
+                license_path=license_path,
+                license_name=os.path.basename(license_path)
+            )
+            package_func = insert_into_string(
+                package_func,
+                license_command,
+                i,
+            )
 
         build_fun = self.gen_build_func(self.python)
 
         if self.python == 'multi':
-            package_fun = PACKAGE_FUNC.format(
+            package_fun = package_func.format(
                 sub_pkgname='_'+self.py_pkgname,
+                py_pkgname=self.py_pkgname,
                 depends=iter_to_str(self.py3_depends),
                 suffix='',
                 python='python'
             )
 
-            py2_package_fun = PACKAGE_FUNC.format(
+            py2_package_fun = package_func.format(
                 sub_pkgname='_'+self.py2_pkgname,
+                py_pkgname=self.py2_pkgname,
                 depends=iter_to_str(self.py2_depends),
                 suffix='-python2',
                 python='python2'
@@ -320,7 +488,8 @@ class Packager(object):
 
             pkgbuild += [PREPARE_FUNC, build_fun, package_fun, py2_package_fun]
         else:
-            package_fun = PACKAGE_FUNC.format(
+            package_fun = package_func.format(
+                py_pkgname=self.pkgname[0],
                 sub_pkgname='',
                 depends='',
                 suffix='',
@@ -331,7 +500,7 @@ class Packager(object):
         return '\n'.join(pkgbuild)
 
 
-def fetch_pymodule(name, version=""):
+def fetch_pymodule(name, version="", find_license=False):
     """
     :type name: str
     :rtype: PyModule
@@ -354,7 +523,7 @@ def fetch_pymodule(name, version=""):
             raise PythonModuleNotFoundError("{}".format(name))
         else:
             raise e
-    return PyModule(info)
+    return PyModule(info, find_license)
 
 
 def main():
@@ -403,10 +572,23 @@ def main():
                            help='Print on screen rather than saving to PKGBUILD file')
     argparser.add_argument('-V', '--version',
                            action='version', version='%(prog)s {}'.format(META['version']))
+    argparser.add_argument('-l', '--find-license',
+                           action='store_true', default=False,
+                           help='Attempt to find package license to install')
+    argparser.add_argument('--name', dest='name', default=None,
+                           help="Your full name for the package maintainer "
+                                "line e.g. 'yourFirstName yourLastName'")
+    argparser.add_argument('--email', dest='email', default=None,
+                           help="Your email for the package maintainer line")
     args = argparser.parse_args()
 
+    if bool(args.email) != bool(args.name):
+        LOG.error("Must supply both email and name or neither.")
+        sys.exit(1)
+
     try:
-        module = fetch_pymodule(args.module, args.module_version)
+        module = fetch_pymodule(
+            args.module, args.module_version, args.find_license)
     except PythonModuleNotFoundError as e:
         LOG.error("Python module not found: {}".format(e))
         sys.exit(0)
@@ -428,8 +610,8 @@ def main():
             del opts[k]
         return opts
 
-    opts = get_options(args,
-                       ['module', 'module_version', 'print_out'])
+    opts = get_options(
+        args, ['module', 'module_version', 'print_out', 'find_license'])
     packager = Packager(module, **opts)
     pkgbuild = packager.generate()
 
