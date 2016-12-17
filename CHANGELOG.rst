@@ -2,6 +2,14 @@ Changelog
 =========
 
 
+0.2.3 (2016-12-17)
+------------------
+
+- Option for adding maintainer info, by @brycepg
+- Option for installing license file, by @brycepg
+- Fix source URL generation
+
+
 0.2.2 (2016-11-27)
 ------------------
 
