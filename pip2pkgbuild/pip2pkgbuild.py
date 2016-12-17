@@ -432,6 +432,11 @@ class Packager(object):
         """
         pkgbuild = []
 
+        if self.name and self.email:
+            maintainer_line = MAINTINER_LINE.format(
+                name=self.name, email=self.email)
+            pkgbuild.append(maintainer_line)
+
         headers = HEADERS.format(
             pkgbase=self.pkgbase,
             pkgname=iter_to_str(self.pkgname),
@@ -445,10 +450,6 @@ class Packager(object):
             source=self.module.source,
             checksums=self.module.checksums
         )
-        if self.name and self.email:
-            maintainer_line = MAINTINER_LINE.format(
-                name=self.name, email=self.email)
-            headers = maintainer_line + headers
 
         pkgbuild.append(headers)
 
