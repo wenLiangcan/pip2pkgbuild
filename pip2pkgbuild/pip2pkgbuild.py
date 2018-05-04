@@ -33,8 +33,8 @@ logging.basicConfig(
 )
 LOG = logging.getLogger('log')
 
-MODULE_JSON = 'http://pypi.python.org/pypi/{name}/json'
-VERSION_MODULE_JSON = 'http://pypi.python.org/pypi/{name}/{version}/json'
+MODULE_JSON = 'https://pypi.python.org/pypi/{name}/json'
+VERSION_MODULE_JSON = 'https://pypi.python.org/pypi/{name}/{version}/json'
 
 MAINTINER_LINE = "# Maintainer: {name} <{email}>\n"
 
