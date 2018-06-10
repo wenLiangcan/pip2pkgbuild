@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.2.3',
+    'version': '0.2.4',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
