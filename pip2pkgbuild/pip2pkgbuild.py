@@ -54,7 +54,7 @@ source=("{source}")
 md5sums=('{checksums}')
 """
 
-SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/{init}/{module}/{_module}-${{pkgver}}.tar.gz"
+SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/${_module::1}/$_module/$_module-$pkgver.tar.gz"
 
 PREPARE_FUNC = """\
 prepare() {
@@ -302,8 +302,7 @@ class PyModule(object):
         :rtype: str
         """
         if url.endswith('.tar.gz'):
-            l = SOURCE_TARGZ.format(
-                init=self.name[0], module=self.name, _module=self.module)
+            l = SOURCE_TARGZ
         else:
             l = url.replace(self.pkgver, "${pkgver}")
         return l
