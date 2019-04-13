@@ -39,7 +39,7 @@ VERSION_MODULE_JSON = 'https://pypi.python.org/pypi/{name}/{version}/json'
 MAINTINER_LINE = "# Maintainer: {name} <{email}>\n"
 
 HEADERS = """\
-pkgbase=('{pkgbase}')
+pkgbase='{pkgbase}'
 pkgname=({pkgname})
 _module='{module}'
 pkgver='{pkgver}'
