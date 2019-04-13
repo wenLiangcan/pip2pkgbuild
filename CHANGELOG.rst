@@ -2,6 +2,13 @@ Changelog
 =========
 
 
+0.2.5 (2019-04-13)
+------------------
+
+- Update SOURCE_TARGZ to match arch package guidelines, by @davve
+- Avoid using array as pkgbase
+
+
 0.2.4 (2017-06-10)
 ------------------
 
