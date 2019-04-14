@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.2.4',
+    'version': '0.2.6',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -54,10 +54,10 @@ makedepends=({mkdepends})
 license=('{license}')
 arch=('any')
 source=("{source}")
-md5sums=('{checksums}')
+sha256sums=('{checksums}')
 """
 
-SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/{init}/{module}/{_module}-${{pkgver}}.tar.gz"
+SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/${_module::1}/$_module/$_module-$pkgver.tar.gz"
 
 PREPARE_FUNC = """\
 prepare() {
@@ -169,7 +169,7 @@ class PyModule(object):
             self.license = self._get_license(info)
             src_info = self._get_src_info(json_data['urls'])
             self.source = self._get_source(dict_get(src_info, 'url', ''))
-            self.checksums = dict_get(src_info, 'md5_digest', '')
+            self.checksums = dict_get(src_info.get('digests', {}), 'sha256', '')
             self.compressed_source = None
             self.license_path = None
             if find_license:
@@ -290,7 +290,7 @@ class PyModule(object):
         :rtype: dict
         """
         if len(urls) == 0:
-            LOG.warning("Package source not found, you need to add it by yourself and regenerate the MD5 checksum")
+            LOG.warning("Package source not found, you need to add it by yourself and regenerate checksum")
             return {}
 
         info = search_in_iter(urls,
@@ -308,8 +308,7 @@ class PyModule(object):
         :rtype: str
         """
         if url.endswith('.tar.gz'):
-            l = SOURCE_TARGZ.format(
-                init=self.name[0], module=self.name, _module=self.module)
+            l = SOURCE_TARGZ
         else:
             l = url.replace(self.pkgver, "${pkgver}")
         return l
