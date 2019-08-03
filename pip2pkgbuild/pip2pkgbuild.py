@@ -47,6 +47,9 @@ pkgrel=1
 pkgdesc="{pkgdesc}"
 url="{url}"
 depends=({depends})
+provides=({provides})
+conflicts=({conflicts})
+replaces=({replaces})
 makedepends=({mkdepends})
 license=('{license}')
 arch=('any')
@@ -75,6 +78,9 @@ BUILD_STATEMENTS = """\
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{
     depends+=({depends})
+    provides=({provides})
+    conflicts=({conflicts})
+    replaces=({replaces})
     cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
     {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build
 }}
@@ -346,7 +352,10 @@ class Packager(object):
 
     def __init__(self, module, python=None, depends=None, py2_depends=None,
                  py3_depends=None, mkdepends=None, pkgbase=None, pkgname=None,
-                 py2_pkgname=None, email=None, name=None):
+                 py2_pkgname=None, email=None, name=None, provides=None,
+                 py2_provides=None, py3_provides=None, conflicts=None,
+                 py2_conflicts=None, py3_conflicts=None, replaces=None,
+                 py2_replaces=None, py3_replaces=None):
         """
         :type module: PyModule
         :type python: str
@@ -359,6 +368,15 @@ class Packager(object):
         :type py2_pkgname: str
         :type name: str
         :type email: str
+        :type provides: list[str]
+        :type py2_provides: list[str]
+        :type py3_provides: list[str]
+        :type conflicts: list[str]
+        :type py2_conflicts: list[str]
+        :type py3_conflicts: list[str]
+        :type replaces: list[str]
+        :type py2_replaces: list[str]
+        :type py3_replaces: list[str]
         """
         self.module = module
         self.name = name
@@ -378,6 +396,15 @@ class Packager(object):
         self.py2_depends = ['python2']
         self.py3_depends = ['python']
         self.mkdepends = []
+        self.provides = []
+        self.py2_provides = []
+        self.py3_provides = []
+        self.conflicts = []
+        self.py2_conflicts = []
+        self.py3_conflicts = []
+        self.replaces = []
+        self.py2_replaces = []
+        self.py3_replaces = []
 
         if self.python == 'multi':
             self.pkgname = [self.py_pkgname, self.py2_pkgname]
@@ -386,6 +413,18 @@ class Packager(object):
             if py3_depends:
                 self.py3_depends += py3_depends
             self.mkdepends += ['python-setuptools', 'python2-setuptools']
+            if py2_conflicts:
+                self.py2_conflicts += py2_conflicts
+            if py3_conflicts:
+                self.py3_conflicts += py3_conflicts
+            if py2_replaces:
+                self.py2_replaces += py2_replaces
+            if py3_replaces:
+                self.py3_replaces += py3_replaces
+            if py2_provides:
+                self.py2_provides += py2_provides
+            if py3_provides:
+                self.py3_provides += py3_provides
         elif self.python == 'python2':
             self.pkgname = [self.py2_pkgname]
             self.depends += ['python2']
@@ -399,6 +438,12 @@ class Packager(object):
             self.depends += depends
         if mkdepends:
             self.mkdepends += mkdepends
+        if provides:
+            self.provides += provides
+        if conflicts:
+            self.conflicts += conflicts
+        if replaces:
+            self.replaces += replaces
 
         self.pkgbase = pkgbase or (
             self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
@@ -444,6 +489,9 @@ class Packager(object):
             url=self.module.url,
             depends=iter_to_str(self.depends),
             mkdepends=iter_to_str(self.mkdepends),
+            provides=iter_to_str(self.provides),
+            conflicts=iter_to_str(self.conflicts),
+            replaces=iter_to_str(self.replaces),
             license=self.module.license,
             source=self.module.source,
             checksums=self.module.checksums
@@ -473,6 +521,9 @@ class Packager(object):
                 sub_pkgname='_'+self.py_pkgname,
                 py_pkgname=self.py_pkgname,
                 depends=iter_to_str(self.py3_depends),
+                provides=iter_to_str(self.py3_provides),
+                conflicts=iter_to_str(self.py3_conflicts),
+                replaces=iter_to_str(self.py3_replaces),
                 suffix='',
                 python='python'
             )
@@ -481,6 +532,9 @@ class Packager(object):
                 sub_pkgname='_'+self.py2_pkgname,
                 py_pkgname=self.py2_pkgname,
                 depends=iter_to_str(self.py2_depends),
+                provides=iter_to_str(self.py2_provides),
+                conflicts=iter_to_str(self.py2_conflicts),
+                replaces=iter_to_str(self.py2_replaces),
                 suffix='-python2',
                 python='python2'
             )
@@ -491,6 +545,9 @@ class Packager(object):
                 py_pkgname=self.pkgname[0],
                 sub_pkgname='',
                 depends='',
+                provides='',
+                conflicts='',
+                replaces='',
                 suffix='',
                 python=self.python
             )
@@ -544,11 +601,11 @@ def main():
     argparser.add_argument('-n', '--package-name',
                            type=str,
                            dest='pkgname',
-                           help='Specify the pkgname value or the name for the Python 3 based package in a package group')
+                           help='Specify the pkgname value or the name for the Python 3 based package in the package group')
     argparser.add_argument('--python2-package-name',
                            type=str,
                            dest='py2_pkgname',
-                           help='Specify the name for the Python 2 based package in a package group')
+                           help='Specify the name for the Python 2 based package in the package group')
     argparser.add_argument('-d', '--depends',
                            type=str, default=[], nargs='*',
                            help='Dependencies for the whole PKGBUILD')
@@ -556,16 +613,55 @@ def main():
                            dest='py2_depends',
                            metavar='DEPENDS',
                            type=str, default=[], nargs='*',
-                           help='Dependencies for the Python 2 based package in a package group')
+                           help='Dependencies for the Python 2 based package in the package group')
     argparser.add_argument('--python3-depends',
                            dest='py3_depends',
                            metavar='DEPENDS',
                            type=str, default=[], nargs='*',
-                           help='Dependencies for the Python 3 based package in a package group')
+                           help='Dependencies for the Python 3 based package in the package group')
     argparser.add_argument('-m', '--make-depends',
                            dest='mkdepends',
                            type=str, default=[], nargs='*',
                            help='Dependencies required while running the makepkg command')
+    argparser.add_argument('--provides',
+                           type=str, default=[], nargs='*',
+                           help='Additional packages that the whole PKGBUILD provides the features of')
+    argparser.add_argument('--python2-provides',
+                           dest='py2_provides',
+                           metavar='PROVIDES',
+                           type=str, default=[], nargs='*',
+                           help='Additional packages that the Python 2 based package in this package group provides the features of')
+    argparser.add_argument('--python3-provides',
+                           dest='py3_provides',
+                           metavar='PROVIDES',
+                           type=str, default=[], nargs='*',
+                           help='Additional packages that the Python 3 based package in this package group provides the features of')
+    argparser.add_argument('-c', '--conflicts',
+                           type=str, default=[], nargs='*',
+                           help='Packages which conflict with the whole PKGBUILD')
+    argparser.add_argument('--python2-conflicts',
+                           dest='py2_conflicts',
+                           metavar='CONFLICTS',
+                           type=str, default=[], nargs='*',
+                           help='Packages which conflict with the Python 2 based package in the package group')
+    argparser.add_argument('--python3-conflicts',
+                           dest='py3_conflicts',
+                           metavar='CONFLICTS',
+                           type=str, default=[], nargs='*',
+                           help='Packages which conflict with the Python 3 based package in the package group')
+    argparser.add_argument('-r', '--replaces',
+                           type=str, default=[], nargs='*',
+                           help='Obsolete packages which are replaced by the whole PKGBUILD')
+    argparser.add_argument('--python2-replaces',
+                           dest='py2_replaces',
+                           metavar='REPLACES',
+                           type=str, default=[], nargs='*',
+                           help='Obsolete packages which are replaced by the Python 2 based package in the package group')
+    argparser.add_argument('--python3-replaces',
+                           dest='py3_replaces',
+                           metavar='REPLACES',
+                           type=str, default=[], nargs='*',
+                           help='Obsolete packages which are replaced by the Python 3 based package in the package group')
     argparser.add_argument('-o', '--print-out',
                            action="store_true",
                            help='Print on screen rather than saving to PKGBUILD file')
