@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.0',
+    'version': '0.3.1',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -92,9 +92,8 @@ package{sub_pkgname}() {{
 }}
 """
 
-# Double escape since INSTALL_LICENSE is interpolated twice
 INSTALL_LICENSE = '''
-    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/{{py_pkgname}}/{license_name}"'''
+    install -D -m644 {license_path} "${{pkgdir}}/usr/share/licenses/{{py_pkgname}}/{license_name}"'''
 
 
 def recognized_licenses():

@@ -2,6 +2,11 @@ Changelog
 =========
 
 
+0.3.1 (2022-02-22)
+------------------
+- Fix incorrect brackets escape in license installation statement.
+
+
 0.3.0 (2022-02-22)
 __________________
 - Support PEP517 based installation instructments.
