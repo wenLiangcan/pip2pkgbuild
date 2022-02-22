@@ -2,6 +2,11 @@ Changelog
 =========
 
 
+0.3.0 (2022-02-22)
+__________________
+- Support PEP517 based installation instructments.
+
+
 0.2.6 (2019-04-13)
 ------------------
 

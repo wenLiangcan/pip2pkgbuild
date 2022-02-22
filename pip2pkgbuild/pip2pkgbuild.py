@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.2.6',
+    'version': '0.3.0',
     'description': 'Generate PKGBUILD file for a Python module from PyPi',
 }
 
@@ -70,19 +70,31 @@ build() {{
 
 BUILD_STATEMENTS = """\
     cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+    {python} -m build --wheel --no-isolation"""
+
+BUILD_STATEMENTS_OLD = """\
+    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
     {python} setup.py build"""
 
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{
     depends+=({depends})
-    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"{license_command}
+    {python} -m installer --destdir="${{pkgdir}}" dist/*.whl
+}}
+"""
+
+PACKAGE_FUNC_OLD = """\
+package{sub_pkgname}() {{
+    depends+=({depends})
+    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"{license_command}
     {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build
 }}
 """
 
 # Double escape since INSTALL_LICENSE is interpolated twice
-INSTALL_LICENSE = """    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/{{py_pkgname}}/{license_name}"
-"""
+INSTALL_LICENSE = '''
+    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/{{py_pkgname}}/{license_name}"'''
 
 
 def recognized_licenses():
@@ -125,17 +137,6 @@ def dict_get(d, key, default):
     return value if isinstance(value, type(default)) else default
 
 
-def insert_into_string(string, new_string, i):
-    """Insert `new_string` into `string` at index `i`
-
-    :type string: str
-    :type new_string: str
-    :type i: int
-    :rtype: str
-    """
-    return string[:i] + new_string + string[i:]
-
-
 class PythonModuleNotFoundError(Exception):
     pass
 
@@ -149,9 +150,11 @@ class ParseModuleInfoError(Exception):
 
 
 class PyModule(object):
-    def __init__(self, json_data, find_license):
+    def __init__(self, json_data, find_license=False, pep517=False):
         """
         :type json_data: dict
+        :type find_license: bool
+        :type pep517: bool
         """
         try:
             info = json_data['info']
@@ -162,15 +165,16 @@ class PyModule(object):
             self.url = info['home_page']
             self.license = self._get_license(info)
             src_info = self._get_src_info(json_data['urls'])
-            self.source = self._get_source(dict_get(src_info, 'url', ''))
+            source_url = dict_get(src_info, 'url', '')
+            self.source = self._get_source(source_url)
             self.checksums = dict_get(src_info.get('digests', {}), 'sha256', '')
-            self.compressed_source = None
             self.license_path = None
-            if find_license:
-                self.compressed_source = self._download_source(
-                    src_info.get('url'))
-                self.license_path = self._find_license_path(
-                    self.compressed_source)
+            self.pep517 = False
+            if find_license or pep517:
+                compressed_source = self._download_source(source_url)
+                if find_license:
+                    self.license_path = self._find_license_path(compressed_source)
+                self.pep517 = pep517 and self._is_pep517_module(compressed_source)
         except KeyError as e:
             raise ParseModuleInfoError(e)
 
@@ -214,20 +218,15 @@ class PyModule(object):
         return compressed_facade
 
     @staticmethod
-    def _find_license_path(compressed_source):
-        """Determine whether the package source contains a physical license.
+    def _search_compressed_fille(compressed_source, match):
+        """Shallow depth first sarching in compressed file
 
-        :type url: str
-        :rtype: bool|None
+        :type compressed_source: CompressedFacade
+        :type match: str -> T|None
+        :rtype: T|None
         """
         if compressed_source is None:
             return None
-        # LICENSE
-        # LICENSE.txt
-        # license.txt
-        # LICENSES.txt
-        # license
-        find_license = re.compile(".*/LICENSES?(?:\.txt|)$")
         files = compressed_source.get_file_listing()
 
         def depth(path):
@@ -241,13 +240,53 @@ class PyModule(object):
         # Prefer license matches closer to the root
         sorted_files = sorted(files, key=depth)
         for file_path in sorted_files:
+            matched = match(file_path)
+            if matched:
+                return matched
+        return None
+
+    def _is_pep517_module(self, compressed_source):
+        """
+        :type compressed_source: CompressedFacade
+        :rtype: bool
+        """
+        def contains_toml(file_path):
+            return file_path.endswith('pyproject.toml')
+        if self._search_compressed_fille(
+          compressed_source, contains_toml) is True:
+            return True
+        else:
+            LOG.warning(self.module + " is not a PEP517 based module.")
+            return False
+
+    def _find_license_path(self, compressed_source):
+        """Determine whether the package source contains a physical license.
+
+        :type compressed_source: CompressedFacade
+        :rtype: bool|None
+        """
+        # LICENSE
+        # LICENSE.txt
+        # license.txt
+        # LICENSES.txt
+        # license
+        find_license = re.compile(".*/LICENSES?(?:\.(txt|rst|md)|)$")
+        def match_license(file_path):
+            """
+            :type file_path: str
+            :rtype: str|None
+            """
             match = find_license.match(file_path, re.I)
             if match:
                 # Remove the subfolder file_path from the match
                 # Note: path separators inside a zipfile are always '/'
                 return ''.join(match.group(0).split('/')[1:])
-        LOG.warning("Could not find license file.")
-        return None
+            return None
+
+        match = self._search_compressed_fille(compressed_source, match_license)
+        if match is None:
+            LOG.warning("Could not find license file.")
+        return match
 
     # https://wiki.archlinux.org/index.php/PKGBUILD#license
     @staticmethod
@@ -363,6 +402,7 @@ class Packager(object):
         self.module = module
         self.name = name
         self.email = email
+        self.pep517 = module.pep517
 
         self.python = 'python2' if sys.version_info.major == 2 else 'python'
         if python in ['python', 'python2', 'multi']:
@@ -385,15 +425,13 @@ class Packager(object):
                 self.py2_depends += py2_depends
             if py3_depends:
                 self.py3_depends += py3_depends
-            self.mkdepends += ['python-setuptools', 'python2-setuptools']
         elif self.python == 'python2':
             self.pkgname = [self.py2_pkgname]
             self.depends += ['python2']
-            self.mkdepends += ['python2-setuptools']
         elif self.python == 'python':
             self.pkgname = [self.py_pkgname]
             self.depends += ['python']
-            self.mkdepends += ['python-setuptools']
+        self.mkdepends += self._get_mkdepends()
 
         if depends:
             self.depends += depends
@@ -403,14 +441,27 @@ class Packager(object):
         self.pkgbase = pkgbase or (
             self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
 
-    @staticmethod
-    def gen_build_func(python):
+    def _get_mkdepends(self):
+        modules = ['build', 'installer'] if self.pep517 else ['setuptools']
+        if self.python == 'multi':
+            versions = ['', '2']
+        elif self.python == 'python2':
+            versions = ['2']
+        elif self.python == 'python':
+            versions = ['']
+        mkdepends = []
+        for m in modules:
+            for v in versions:
+                mkdepends.append('python' + v + '-' + m)
+        return mkdepends
+
+    def _gen_build_func(self, python):
         def gen_statements(py):
             if python == 'multi' and py == 'python2':
                 suffix = '-python2'
             else:
                 suffix = ''
-            return BUILD_STATEMENTS.format(
+            return (BUILD_STATEMENTS if self.pep517 else BUILD_STATEMENTS_OLD).format(
                 suffix=suffix,
                 python=py
             )
@@ -451,22 +502,18 @@ class Packager(object):
 
         pkgbuild.append(headers)
 
-        package_func = PACKAGE_FUNC
+        package_func = PACKAGE_FUNC if self.pep517 else PACKAGE_FUNC_OLD
         if self.module.license_path:
             # Location at which to incest the license installation step.
-            i = package_func.index("    {python} setup.py install")
             license_path = self.module.license_path
             license_command = INSTALL_LICENSE.format(
                 license_path=license_path,
                 license_name=os.path.basename(license_path)
             )
-            package_func = insert_into_string(
-                package_func,
-                license_command,
-                i,
-            )
+        else:
+            license_command = ''
 
-        build_fun = self.gen_build_func(self.python)
+        build_fun = self._gen_build_func(self.python)
 
         if self.python == 'multi':
             package_fun = package_func.format(
@@ -474,6 +521,7 @@ class Packager(object):
                 py_pkgname=self.py_pkgname,
                 depends=iter_to_str(self.py3_depends),
                 suffix='',
+                license_command=license_command,
                 python='python'
             )
 
@@ -482,6 +530,7 @@ class Packager(object):
                 py_pkgname=self.py2_pkgname,
                 depends=iter_to_str(self.py2_depends),
                 suffix='-python2',
+                license_command=license_command,
                 python='python2'
             )
 
@@ -492,6 +541,7 @@ class Packager(object):
                 sub_pkgname='',
                 depends='',
                 suffix='',
+                license_command=license_command,
                 python=self.python
             )
             pkgbuild += [build_fun, package_fun]
@@ -499,9 +549,12 @@ class Packager(object):
         return '\n'.join(pkgbuild)
 
 
-def fetch_pymodule(name, version="", find_license=False):
+def fetch_pymodule(name, version, find_license=False, pep517=False):
     """
     :type name: str
+    :type version: str
+    :type find_license: bool
+    :type pep517: bool
     :rtype: PyModule
     """
     def fetch_json(url):
@@ -522,7 +575,7 @@ def fetch_pymodule(name, version="", find_license=False):
             raise PythonModuleNotFoundError("{}".format(name))
         else:
             raise e
-    return PyModule(info, find_license)
+    return PyModule(info, find_license, pep517)
 
 
 def main():
@@ -579,6 +632,9 @@ def main():
                                 "line e.g. 'yourFirstName yourLastName'")
     argparser.add_argument('--email', dest='email', default=None,
                            help="Your email for the package maintainer line")
+    argparser.add_argument('--pep517', dest='pep517', action='store_true', default=False,
+                           help='Prefer PEP517 based installation method if supporting by the module')
+
     args = argparser.parse_args()
 
     if bool(args.email) != bool(args.name):
@@ -586,8 +642,9 @@ def main():
         sys.exit(1)
 
     try:
-        module = fetch_pymodule(
-            args.module, args.module_version, args.find_license)
+        module = fetch_pymodule(args.module, args.module_version,
+                                args.find_license,
+                                args.pep517)
     except PythonModuleNotFoundError as e:
         LOG.error("Python module not found: {}".format(e))
         sys.exit(0)
@@ -610,7 +667,7 @@ def main():
         return opts
 
     opts = get_options(
-        args, ['module', 'module_version', 'print_out', 'find_license'])
+        args, ['module', 'module_version', 'print_out', 'find_license', 'pep517'])
     packager = Packager(module, **opts)
     pkgbuild = packager.generate()
 

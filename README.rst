@@ -7,6 +7,7 @@ Re-implementing `bluepeppers/pip2arch <https://github.com/bluepeppers/pip2arch>`
 - Smarter package license detection.
 - License file installation (by @brycepg).
 - Maintainer information generation (by @brycepg).
+- Supports generating PEP517 based installation instructments.
 
 Installation
 ============
@@ -80,6 +81,7 @@ Usage
        --name NAME           Your full name for the package maintainer line e.g.
                              'yourFirstName yourLastName'
        --email EMAIL         Your email for the package maintainer line
+       --pep517              Prefer PEP517 based installation method if supporting by the module
 
 Examples
 ========
