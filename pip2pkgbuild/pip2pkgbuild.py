@@ -24,7 +24,7 @@ else:
 META = {
     'name': 'pip2pkgbuild',
     'version': '0.3.1',
-    'description': 'Generate PKGBUILD file for a Python module from PyPi',
+    'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
 logging.basicConfig(
@@ -236,7 +236,7 @@ class PyModule(object):
             """
             return path.count("/")
 
-        # Prefer license matches closer to the root
+        # Prefer matches closer to the root
         sorted_files = sorted(files, key=depth)
         for file_path in sorted_files:
             matched = match(file_path)
@@ -503,7 +503,6 @@ class Packager(object):
 
         package_func = PACKAGE_FUNC if self.pep517 else PACKAGE_FUNC_OLD
         if self.module.license_path:
-            # Location at which to incest the license installation step.
             license_path = self.module.license_path
             license_command = INSTALL_LICENSE.format(
                 license_path=license_path,
