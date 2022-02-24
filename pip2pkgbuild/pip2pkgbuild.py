@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.1',
+    'version': '0.3.2',
     'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
@@ -76,24 +76,22 @@ BUILD_STATEMENTS_OLD = """\
     cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
     {python} setup.py build"""
 
+INSTALL_LICENSE = '''\
+    install -D -m644 {license_path} "${{{{pkgdir}}}}/usr/share/licenses/{{py_pkgname}}/{license_name}"'''
+
+INSTALL_STATEMENT = '''\
+    {python} -m installer --destdir="${{pkgdir}}" dist/*.whl'''
+
+INSTALL_STATEMENT_OLD = '''\
+    {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build'''
+
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{
     depends+=({depends})
-    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"{license_command}
-    {python} -m installer --destdir="${{pkgdir}}" dist/*.whl
+    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+{packaging_steps}
 }}
 """
-
-PACKAGE_FUNC_OLD = """\
-package{sub_pkgname}() {{
-    depends+=({depends})
-    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"{license_command}
-    {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build
-}}
-"""
-
-INSTALL_LICENSE = '''
-    install -D -m644 {license_path} "${{pkgdir}}/usr/share/licenses/{{py_pkgname}}/{license_name}"'''
 
 
 def recognized_licenses():
@@ -134,6 +132,14 @@ def dict_get(d, key, default):
     """
     value = d.get(key)
     return value if isinstance(value, type(default)) else default
+
+
+def join_nonempty(lines):
+    """
+    :type lines: list<str>
+    :rtype: str
+    """
+    return '\n'.join([l for l in lines if l])
 
 
 class PythonModuleNotFoundError(Exception):
@@ -501,7 +507,7 @@ class Packager(object):
 
         pkgbuild.append(headers)
 
-        package_func = PACKAGE_FUNC if self.pep517 else PACKAGE_FUNC_OLD
+        install_template = INSTALL_STATEMENT if self.pep517 else INSTALL_STATEMENT_OLD
         if self.module.license_path:
             license_path = self.module.license_path
             license_command = INSTALL_LICENSE.format(
@@ -514,35 +520,41 @@ class Packager(object):
         build_fun = self._gen_build_func(self.python)
 
         if self.python == 'multi':
-            package_fun = package_func.format(
+            packaging_steps = join_nonempty([
+                license_command.format(py_pkgname=self.py_pkgname),
+                install_template.format(python='python')
+            ])
+            package_func = PACKAGE_FUNC.format(
                 sub_pkgname='_'+self.py_pkgname,
-                py_pkgname=self.py_pkgname,
                 depends=iter_to_str(self.py3_depends),
                 suffix='',
-                license_command=license_command,
-                python='python'
+                packaging_steps=packaging_steps
             )
 
-            py2_package_fun = package_func.format(
+            py2_packaging_steps = join_nonempty([
+                license_command.format(py_pkgname=self.py2_pkgname),
+                install_template.format(python='python2')
+            ])
+            py2_package_func = PACKAGE_FUNC.format(
                 sub_pkgname='_'+self.py2_pkgname,
-                py_pkgname=self.py2_pkgname,
                 depends=iter_to_str(self.py2_depends),
                 suffix='-python2',
-                license_command=license_command,
-                python='python2'
+                packaging_steps=py2_packaging_steps
             )
 
-            pkgbuild += [PREPARE_FUNC, build_fun, package_fun, py2_package_fun]
+            pkgbuild += [PREPARE_FUNC, build_fun, package_func, py2_package_func]
         else:
-            package_fun = package_func.format(
-                py_pkgname=self.pkgname[0],
+            packaging_steps = join_nonempty([
+                license_command.format(py_pkgname=self.pkgname[0]),
+                install_template.format(python=self.python)
+            ])
+            package_func = PACKAGE_FUNC.format(
                 sub_pkgname='',
                 depends='',
                 suffix='',
-                license_command=license_command,
-                python=self.python
+                packaging_steps=packaging_steps
             )
-            pkgbuild += [build_fun, package_fun]
+            pkgbuild += [build_fun, package_func]
 
         return '\n'.join(pkgbuild)
 
