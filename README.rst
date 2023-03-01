@@ -15,7 +15,9 @@ Installation
 - Install from ``AUR``:
     .. code-block:: shell
 
-     $ yaourt -S pip2pkgbuild
+     $ git clone https://aur.archlinux.org/packages/pip2pkgbuild
+     $ cd pip2pkgbuild
+     $ makepkg -si
 
 - Install from ``PyPi``:
     .. code-block:: shell
