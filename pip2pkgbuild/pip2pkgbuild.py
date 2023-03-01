@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.2',
+    'version': '0.3.3',
     'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
@@ -54,7 +54,7 @@ source=("{source}")
 sha256sums=('{checksums}')
 """
 
-SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/${_module::1}/$_module/$_module-$pkgver.tar.gz"
+SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/${_module::1}/$_module/${_module/-/_}-$pkgver.tar.gz"
 
 PREPARE_FUNC = """\
 prepare() {
