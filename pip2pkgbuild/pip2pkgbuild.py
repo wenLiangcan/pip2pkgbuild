@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.3',
+    'version': '0.3.4',
     'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
@@ -174,12 +174,10 @@ class PyModule(object):
             self.source = self._get_source(source_url)
             self.checksums = dict_get(src_info.get('digests', {}), 'sha256', '')
             self.license_path = None
-            self.pep517 = False
-            if find_license or pep517:
+            self.pep517 = pep517
+            if find_license:
                 compressed_source = self._download_source(source_url)
-                if find_license:
-                    self.license_path = self._find_license_path(compressed_source)
-                self.pep517 = pep517 and self._is_pep517_module(compressed_source)
+                self.license_path = self._find_license_path(compressed_source)
         except KeyError as e:
             raise ParseModuleInfoError(e)
 
@@ -249,20 +247,6 @@ class PyModule(object):
             if matched:
                 return matched
         return None
-
-    def _is_pep517_module(self, compressed_source):
-        """
-        :type compressed_source: CompressedFacade
-        :rtype: bool
-        """
-        def contains_toml(file_path):
-            return file_path.endswith('pyproject.toml')
-        if self._search_compressed_fille(
-          compressed_source, contains_toml) is True:
-            return True
-        else:
-            LOG.warning(self.module + " is not a PEP517 based module.")
-            return False
 
     def _find_license_path(self, compressed_source):
         """Determine whether the package source contains a physical license.

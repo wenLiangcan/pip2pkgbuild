@@ -1,6 +1,10 @@
 # Changelog
 
 
+## 0.3.4 (2023-09-14)
+- Allow generation of PEP517 PKGBUILDs for Python modules without pyproject.toml.
+
+
 ## 0.3.3 (2023-03-01)
 - Fix source archive file naming issue.
 
