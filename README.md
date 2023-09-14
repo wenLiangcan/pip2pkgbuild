@@ -16,7 +16,9 @@ Re-implementing [`bluepeppers/pip2arch`](https://github.com/bluepeppers/pip2arch
 
 Install from `AUR`:
 ```shell
-$ git clone https://aur.archlinux.org/packages/pip2pkgbuild
+$ git clone https://aur.archlinux.org/pip2pkgbuild.git
+$ # for Python 2:
+$ # git clone https://aur.archlinux.org/python2-pip2pkgbuild.git pip2pkgbuild
 $ cd pip2pkgbuild
 $ makepkg -si
 ```
