@@ -1,5 +1,8 @@
 # Changelog
 
+## 0.3.5 (2023-11-27)
+- Fix issue of accessing extracted source folder.
+
 
 ## 0.3.4 (2023-09-14)
 - Allow generation of PEP517 PKGBUILDs for Python modules without pyproject.toml.

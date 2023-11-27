@@ -23,7 +23,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.4',
+    'version': '0.3.5',
     'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
@@ -42,6 +42,7 @@ HEADERS = """\
 pkgbase='{pkgbase}'
 pkgname=({pkgname})
 _module='{module}'
+_src_folder='{src_folder}'
 pkgver='{pkgver}'
 pkgrel=1
 pkgdesc="{pkgdesc}"
@@ -54,11 +55,9 @@ source=("{source}")
 sha256sums=('{checksums}')
 """
 
-SOURCE_TARGZ = "https://files.pythonhosted.org/packages/source/${_module::1}/$_module/${_module/-/_}-$pkgver.tar.gz"
-
 PREPARE_FUNC = """\
 prepare() {
-    cp -a "${srcdir}/${_module}-${pkgver}"{,-python2}
+    cp -a "${srcdir}/${_src_folder}"{,-python2}
 }
 """
 
@@ -69,11 +68,11 @@ build() {{
 """
 
 BUILD_STATEMENTS = """\
-    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+    cd "${{srcdir}}/${{_src_folder}}{suffix}"
     {python} -m build --wheel --no-isolation"""
 
 BUILD_STATEMENTS_OLD = """\
-    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+    cd "${{srcdir}}/${{_src_folder}}{suffix}"
     {python} setup.py build"""
 
 INSTALL_LICENSE = '''\
@@ -88,7 +87,7 @@ INSTALL_STATEMENT_OLD = '''\
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{
     depends+=({depends})
-    cd "${{srcdir}}/${{_module}}-${{pkgver}}{suffix}"
+    cd "${{srcdir}}/${{_src_folder}}{suffix}"
 {packaging_steps}
 }}
 """
@@ -170,13 +169,12 @@ class PyModule(object):
             self.url = info['home_page']
             self.license = self._get_license(info)
             src_info = self._get_src_info(json_data['urls'])
-            source_url = dict_get(src_info, 'url', '')
-            self.source = self._get_source(source_url)
+            self.source = dict_get(src_info, 'url', '')
             self.checksums = dict_get(src_info.get('digests', {}), 'sha256', '')
             self.license_path = None
             self.pep517 = pep517
             if find_license:
-                compressed_source = self._download_source(source_url)
+                compressed_source = self._download_source(self.source)
                 self.license_path = self._find_license_path(compressed_source)
         except KeyError as e:
             raise ParseModuleInfoError(e)
@@ -329,11 +327,8 @@ class PyModule(object):
         :type url: str
         :rtype: str
         """
-        if url.endswith('.tar.gz'):
-            l = SOURCE_TARGZ
-        else:
-            l = url.replace(self.pkgver, "${pkgver}")
-        return l
+        ext = url.split(self.pkgver)[-1]
+        return '${_module}-${pkgver}' + ext + '::' + url
 
 
 class CompressedFacade(object):
@@ -475,10 +470,13 @@ class Packager(object):
                 name=self.name, email=self.email)
             pkgbuild.append(maintainer_line)
 
+        pkg = self.module.source.split('/')[-1]
+        src_folder = pkg.split(self.module.pkgver)[0] + self.module.pkgver
         headers = HEADERS.format(
             pkgbase=self.pkgbase,
             pkgname=iter_to_str(self.pkgname),
             module=self.module.module,
+            src_folder=src_folder,
             pkgver=self.module.pkgver,
             pkgdesc=self.module.pkgdesc,
             url=self.module.url,
