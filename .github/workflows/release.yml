@@ -1,3 +1,9 @@
+name: Release to PyPi
+
+on:
+  release:
+    types: [published]
+
 jobs:
   release-build:
     runs-on: ubuntu-latest
