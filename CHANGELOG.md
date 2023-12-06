@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.3.6 (2023-12-06)
+- Add python-wheel as mkdepend for PEP517 based package.
+- Disable PEP517 based PKGBUILD generation for Python 2 packages.
+
+
 ## 0.3.5 (2023-11-27)
 - Fix issue of accessing extracted source folder.
 
