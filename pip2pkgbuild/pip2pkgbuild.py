@@ -426,7 +426,8 @@ class Packager(object):
             self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
 
     def _get_mkdepends(self):
-        modules = ['build', 'installer'] if self.pep517 else ['setuptools']
+        # https://wiki.archlinux.org/title/Python_package_guidelines#Standards_based_(PEP_517)
+        modules = ['build', 'installer', 'wheel'] if self.pep517 else ['setuptools']
         if self.python == 'multi':
             versions = ['', '2']
         elif self.python == 'python2':
