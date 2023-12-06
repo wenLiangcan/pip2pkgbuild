@@ -633,6 +633,12 @@ def main():
     if bool(args.email) != bool(args.name):
         LOG.error("Must supply both email and name or neither.")
         sys.exit(1)
+    if args.pep517 and (
+            (args.python is None and sys.version_info.major == 2)
+            or args.python == 'multi' or args.python == 'python2'
+    ):
+        LOG.error("PEP517 based installation supports Python 3 packages only.")
+        sys.exit(1)
 
     try:
         module = fetch_pymodule(args.module, args.module_version,
