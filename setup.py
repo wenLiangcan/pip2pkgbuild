@@ -5,7 +5,8 @@ import os
 from setuptools import find_packages, setup
 
 here = os.path.abspath(os.path.dirname(__file__))
-META = imp.load_source('', os.path.join(here, 'pip2pkgbuild/pip2pkgbuild.py')).META
+META = imp.load_source('',
+                       os.path.join(here, 'pip2pkgbuild/pip2pkgbuild.py')).META
 with io.open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = os.linesep + f.read()
 
@@ -14,7 +15,7 @@ setup(
     version=META['version'],
     description=META['description'],
     long_description=long_description,
-    long_description_content_type="text/markdown",
+    long_description_content_type='text/markdown',
 
     url='https://github.com/wenLiangcan/pip2pkgbuild',
     author='wenLiangcan',
