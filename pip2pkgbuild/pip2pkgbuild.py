@@ -5,6 +5,7 @@
 from __future__ import unicode_literals
 
 import argparse
+import fileinput
 import json
 import logging
 import os
@@ -98,12 +99,22 @@ package{sub_pkgname}() {{
 """
 
 
-def recognized_licenses():
+def known_licenses():
     """
     :rtype: list[str]
     """
-    common = os.listdir('/usr/share/licenses/common')
-    return common + ['MIT', 'BSD', 'Python', 'ZLIB']
+    return fileinput.input(
+            files=('/usr/share/licenses/known_spdx_license_identifiers.txt'),
+            encoding='utf-8')
+
+
+# Licenses we're allowed to skip installing, if this becomes desired
+# def common_licenses():
+#     """
+#     :rtype: list[str]
+#     """
+#     return map(lambda file: file.removesuffix('.txt'),
+#                           os.listdir('/usr/share/licenses/spdx'))
 
 
 def search_in_iter(i, p):
@@ -117,6 +128,10 @@ def search_in_iter(i, p):
         if p(x):
             return x
     return None
+
+
+def search_in_iter_on(proj, i, p):
+    return search_in_iter(map(proj, i), lambda x: p(proj(x)))
 
 
 def iter_to_str(i):
@@ -289,11 +304,13 @@ class PyModule(object):
         :type info: dict
         :rtype: str
         """
-        def find_recognized(p):
-            return search_in_iter(recognized_licenses(), p)
+        def find_known_licenses(p):
+            return search_in_iter_on(
+                    lambda l: l.lower().removesuffix(' license'),
+                    known_licenses(), p)
 
-        license_ = find_recognized(
-            lambda recg: recg.lower() == dict_get(info, 'license', '').lower())
+        license_ = find_known_licenses(
+            lambda recg: recg == dict_get(info, 'license', ''))
 
         if license_ is None:
             license_str = search_in_iter(
@@ -304,8 +321,8 @@ class PyModule(object):
                 license_ = 'unknown'
             else:
                 license_str = license_str.split('::')[-1].strip()
-                license_ = find_recognized(
-                    lambda recg: recg.lower() in license_str.lower())
+                license_ = find_known_licenses(
+                    lambda recg: recg in license_str)
                 if license_ is None:
                     license_ = 'custom:{}'.format(license_str)
         return license_
