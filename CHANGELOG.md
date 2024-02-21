@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.8 (2024-02-21)
+- Fix Python2 compatibility issue.
+
+
 ## 0.3.7 (2024-02-21)
 - Fix determining known licenses according to [RFC16](https://rfc.archlinux.page/0016-spdx-license-identifiers/) by [@hseg](https://github.com/hseg).
 

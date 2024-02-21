@@ -14,7 +14,8 @@ import sys
 import tarfile
 import zipfile
 
-if sys.version_info.major == 2:
+IS_PY2 = sys.version_info.major == 2
+if IS_PY2:
     from cStringIO import StringIO as BytesIO
     from urllib2 import urlopen, HTTPError
 else:
@@ -24,7 +25,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.7',
+    'version': '0.3.8',
     'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
@@ -103,9 +104,14 @@ def known_licenses():
     """
     :rtype: list[str]
     """
+    args = {}
+    if IS_PY2:
+        args['openhook'] = fileinput.hook_encoded('utf-8')
+    else:
+        args['encoding'] = 'utf-8'
     return fileinput.input(
             files=('/usr/share/licenses/known_spdx_license_identifiers.txt'),
-            encoding='utf-8')
+            **args)
 
 
 # Licenses we're allowed to skip installing, if this becomes desired
@@ -415,7 +421,7 @@ class Packager(object):
         self.email = email
         self.pep517 = module.pep517
 
-        self.python = 'python2' if sys.version_info.major == 2 else 'python'
+        self.python = 'python2' if IS_PY2 else 'python'
         if python in ['python', 'python2', 'multi']:
             self.python = python
 
@@ -686,7 +692,7 @@ def main():
         LOG.error('Must supply either both email and name or neither.')
         sys.exit(1)
     if args.pep517 and (
-            (args.python is None and sys.version_info.major == 2)
+            (args.python is None and IS_PY2)
             or args.python == 'multi' or args.python == 'python2'
     ):
         LOG.error('PEP517 based installation supports Python 3 packages only.')
