@@ -25,7 +25,7 @@ else:
 
 META = {
     'name': 'pip2pkgbuild',
-    'version': '0.3.8',
+    'version': '0.3.9',
     'description': 'Generate PKGBUILD file for a Python module from PyPI',
 }
 
@@ -114,15 +114,6 @@ def known_licenses():
             **args)
 
 
-# Licenses we're allowed to skip installing, if this becomes desired
-# def common_licenses():
-#     """
-#     :rtype: list[str]
-#     """
-#     return map(lambda file: file.removesuffix('.txt'),
-#                           os.listdir('/usr/share/licenses/spdx'))
-
-
 def search_in_iter(i, p):
     """Find the first element matching the predicate in an iterable.
 
@@ -165,6 +156,17 @@ def join_nonempty(lines):
     :rtype: str
     """
     return '\n'.join([x for x in lines if x])
+
+
+def removesuffix(s, suffix):
+    """
+    :type s: str
+    :type suffix: str
+    :rtype: str
+    """
+    if s.endswith(suffix):
+        return s[:-len(suffix)]
+    return s
 
 
 class PythonModuleNotFoundError(Exception):
@@ -312,7 +314,7 @@ class PyModule(object):
         """
         def find_known_licenses(p):
             return search_in_iter_on(
-                    lambda l: l.lower().removesuffix(' license'),
+                    lambda l: removesuffix(l.lower(), ' license'),
                     known_licenses(), p)
 
         license_ = find_known_licenses(

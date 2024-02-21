@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.9 (2024-02-21)
+- Fix Python2 compatibility issue again ...
+
+
 ## 0.3.8 (2024-02-21)
 - Fix Python2 compatibility issue.
 
