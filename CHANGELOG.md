@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.7 (2024-02-21)
+- Fix determining known licenses according to [RFC16](https://rfc.archlinux.page/0016-spdx-license-identifiers/) by [@hseg](https://github.com/hseg).
+
+
 ## 0.3.6 (2023-12-06)
 - Add python-wheel as mkdepend for PEP517 based package.
 - Disable PEP517 based PKGBUILD generation for Python 2 packages.
