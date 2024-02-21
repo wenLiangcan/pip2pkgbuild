@@ -38,11 +38,16 @@ LOG = logging.getLogger('log')
 MODULE_JSON = 'https://pypi.python.org/pypi/{name}/json'
 VERSION_MODULE_JSON = 'https://pypi.python.org/pypi/{name}/{version}/json'
 
-MAINTINER_LINE = '# Maintainer: {name} <{email}>\n'
+MAINTAINER_LINE = '# Maintainer: {name} <{email}>\n'
 
-HEADERS = """\
+SPLIT_NAME = """\
 pkgbase='{pkgbase}'
 pkgname=({pkgname})
+"""
+
+SINGLE_NAME = 'pkgname={pkgname}'
+
+HEADERS = """\
 _module='{module}'
 _src_folder='{src_folder}'
 pkgver='{pkgver}'
@@ -91,9 +96,11 @@ INSTALL_STATEMENT = """\
 INSTALL_STATEMENT_OLD = """\
     {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build"""
 
+SUBPKG_DEPENDS = '    depends+=({depends})\n'
+
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{
-    depends+=({depends})
+{dependencies}
     cd "${{srcdir}}/${{_src_folder}}{suffix}"
 {packaging_steps}
 }}
@@ -506,15 +513,22 @@ class Packager(object):
         pkgbuild = []
 
         if self.name and self.email:
-            maintainer_line = MAINTINER_LINE.format(
+            maintainer_line = MAINTAINER_LINE.format(
                 name=self.name, email=self.email)
             pkgbuild.append(maintainer_line)
 
         pkg = self.module.source.split('/')[-1]
         src_folder = pkg.split(self.module.pkgver)[0] + self.module.pkgver
+
+        if self.python == 'multi':
+            pkgbuild.append(SPLIT_NAME.format(
+                pkgbase=self.pkgbase,
+                pkgname=iter_to_str(self.pkgname)))
+        else:
+            pkgbuild.append(SINGLE_NAME.format(
+                pkgname=iter_to_str(self.pkgname)))
+
         headers = HEADERS.format(
-            pkgbase=self.pkgbase,
-            pkgname=iter_to_str(self.pkgname),
             module=self.module.module,
             src_folder=src_folder,
             pkgver=self.module.pkgver,
@@ -548,7 +562,8 @@ class Packager(object):
             ])
             package_func = PACKAGE_FUNC.format(
                 sub_pkgname='_'+self.py_pkgname,
-                depends=iter_to_str(self.py3_depends),
+                dependencies=SUBPKG_DEPENDS.format(
+                    depends=iter_to_str(self.py3_depends)),
                 suffix='',
                 packaging_steps=packaging_steps
             )
@@ -559,7 +574,8 @@ class Packager(object):
             ])
             py2_package_func = PACKAGE_FUNC.format(
                 sub_pkgname='_'+self.py2_pkgname,
-                depends=iter_to_str(self.py2_depends),
+                dependencies=SUBPKG_DEPENDS.format(
+                    depends=iter_to_str(self.py2_depends)),
                 suffix='-python2',
                 packaging_steps=py2_packaging_steps
             )
@@ -575,7 +591,7 @@ class Packager(object):
             ])
             package_func = PACKAGE_FUNC.format(
                 sub_pkgname='',
-                depends='',
+                dependencies='',
                 suffix='',
                 packaging_steps=packaging_steps
             )
