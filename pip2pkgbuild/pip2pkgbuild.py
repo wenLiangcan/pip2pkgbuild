@@ -685,7 +685,8 @@ def main():
             '--email', dest='email', default=None,
             help='Email for the package maintainer line')
     argparser.add_argument(
-            '--pep517', dest='pep517', action='store_true', default=False,
+            '--pep517', dest='pep517', action='store_true',
+            default=False if IS_PY2 else True,
             help='Prefer PEP517 based installation method if supported')
 
     args = argparser.parse_args()
