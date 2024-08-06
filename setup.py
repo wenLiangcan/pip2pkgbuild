@@ -1,12 +1,27 @@
-import imp
 import io
 import os
+import sys
 
 from setuptools import find_packages, setup
 
 here = os.path.abspath(os.path.dirname(__file__))
-META = imp.load_source('',
-                       os.path.join(here, 'pip2pkgbuild/pip2pkgbuild.py')).META
+IS_PY2 = sys.version_info.major == 2
+if IS_PY2:
+    import imp
+    META = imp.load_source(
+                '',
+                os.path.join(here, 'pip2pkgbuild/pip2pkgbuild.py')
+            ).META
+else:
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+            'pip2pkgbuild',
+            'pip2pkgbuild/pip2pkgbuild.py'
+           )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    META = module.META
+
 with io.open(os.path.join(here, 'README.md'), encoding='utf-8') as f:
     long_description = os.linesep + f.read()
 
