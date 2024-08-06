@@ -96,11 +96,12 @@ INSTALL_STATEMENT = """\
 INSTALL_STATEMENT_OLD = """\
     {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build"""
 
-SUBPKG_DEPENDS = '    depends+=({depends})\n'
+SUBPKG_DEPENDS = '''
+    depends+=({depends})
+'''
 
 PACKAGE_FUNC = """\
-package{sub_pkgname}() {{
-{dependencies}
+package{sub_pkgname}() {{{dependencies}
     cd "${{srcdir}}/${{_src_folder}}{suffix}"
 {packaging_steps}
 }}
