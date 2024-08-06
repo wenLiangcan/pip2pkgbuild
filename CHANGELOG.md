@@ -1,5 +1,10 @@
 # Changelog
 
+
+## 0.5.0 (2024-08-06)
+- Replace imp by importlib, Python 3 defaults to PEP517 packaging by [@hseg](https://github.com/hseg).
+
+
 ## 0.3.9 (2024-02-21)
 - Fix Python2 compatibility issue again ...
 
