@@ -96,11 +96,12 @@ INSTALL_STATEMENT = """\
 INSTALL_STATEMENT_OLD = """\
     {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build"""
 
-SUBPKG_DEPENDS = '    depends+=({depends})\n'
+SUBPKG_DEPENDS = '''
+    depends+=({depends})
+'''
 
 PACKAGE_FUNC = """\
-package{sub_pkgname}() {{
-{dependencies}
+package{sub_pkgname}() {{{dependencies}
     cd "${{srcdir}}/${{_src_folder}}{suffix}"
 {packaging_steps}
 }}
@@ -409,9 +410,11 @@ class CompressedFacade(object):
 
 class Packager(object):
 
-    def __init__(self, module, python=None, depends=None, py2_depends=None,
-                 py3_depends=None, mkdepends=None, pkgbase=None, pkgname=None,
-                 py2_pkgname=None, email=None, name=None):
+    def __init__(self, module, python=None,
+                 depends=None, py2_depends=None, py3_depends=None,
+                 mkdepends=None, backend=None,
+                 pkgbase=None, pkgname=None, py2_pkgname=None,
+                 email=None, name=None):
         """
         :type module: PyModule
         :type python: str
@@ -419,6 +422,7 @@ class Packager(object):
         :type py2_depends: list[str]
         :type py3_depends: list[str]
         :type mkdepends: list[str]
+        :type backend: str
         :type pkgbase: str
         :type pkgname: str
         :type py2_pkgname: str
@@ -457,7 +461,7 @@ class Packager(object):
         elif self.python == 'python':
             self.pkgname = [self.py_pkgname]
             self.depends += ['python']
-        self.mkdepends += self._get_mkdepends()
+        self.mkdepends += self._get_mkdepends(backend)
 
         if depends:
             self.depends += depends
@@ -467,12 +471,11 @@ class Packager(object):
         self.pkgbase = pkgbase or (
             self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
 
-    def _get_mkdepends(self):
+    def _get_mkdepends(self, backend):
+        modules = [backend]
         # Archwiki: [Python_package_guidelines#Standards_based_(PEP_517)]
         if self.pep517:
-            modules = ['build', 'installer', 'wheel']
-        else:
-            modules = ['setuptools']
+            modules += ['build', 'installer', 'wheel']
         if self.python == 'multi':
             versions = ['', '2']
         elif self.python == 'python2':
@@ -684,6 +687,11 @@ def main():
             type=str, default=[], nargs='*',
             help='Packages to add to makedepends (needed for build only)')
     argparser.add_argument(
+            '-s', '--build-backend',
+            dest='backend',
+            type=str, default='setuptools',
+            help='Build backend used by package (default guess: setuptools)')
+    argparser.add_argument(
             '-o', '--print-out',
             action='store_true',
             help='Print to stdout rather than saving to PKGBUILD file')
@@ -702,14 +710,25 @@ def main():
             help='Email for the package maintainer line')
     argparser.add_argument(
             '--pep517', dest='pep517', action='store_true',
-            default=False if IS_PY2 else True,
+            default=None,
             help='Prefer PEP517 based installation method if supported')
+    argparser.add_argument(
+            '--no-pep517', dest='pep517', action='store_false',
+            default=None,
+            help='Use old-style installation method unconditionally')
 
     args = argparser.parse_args()
 
     if bool(args.email) != bool(args.name):
         LOG.error('Must supply either both email and name or neither.')
         sys.exit(1)
+
+    if args.pep517 is None:
+        if IS_PY2 or args.python == 'multi' or args.python == 'python2':
+            args.pep517 = False
+        elif not IS_PY2 or args.python == 'python3':
+            args.pep517 = True
+
     if args.pep517 and (
             (args.python is None and IS_PY2)
             or args.python == 'multi' or args.python == 'python2'
