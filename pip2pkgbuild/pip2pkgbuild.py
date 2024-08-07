@@ -414,24 +414,65 @@ class ZipArchive(Archive):
                 name in self.file.namelist() if not name.endswith('/')]
 
 
+class SplitMeta(object):
+    """PKGBUILD metadata that can be overridden per split package"""
+    # Actually, just the split metadata this script cares about
+
+    def __init__(self, pkgname=None, depends=None, suffix=''):
+        self.pkgname = pkgname
+        self.depends = depends if depends is not None else []
+        self.suffix  = suffix
+
+    def update(self, pkgname=None, depends=None, suffix=None):
+        self.pkgname = pkgname if self.pkgname is None else self.pkgname
+        self.depends += depends
+        self.suffix  = suffix  if self.suffix  is None else self.suffix
+
+
+def build_meta(python, pkgname, py2_pkgname, py3_depends, py2_depends):
+    meta = {}
+    if python in {'python', 'multi'}:
+        meta['python'] = SplitMeta(
+                pkgname = pkgname,
+                depends = py3_depends,
+                suffix  = ''
+                )
+    if python in {'python2', 'multi'}:
+        meta['python2'] = SplitMeta(
+                pkgname = py2_pkgname,
+                depends = py2_depends,
+                suffix  = '-python2' if python == 'multi' else ''
+                )
+
+    if 'python' not in meta and (
+            pkgname is not None or py3_depends is not None):
+        raise ValueError(('Python 3 package metadata passed: %s\n' +
+                         'But requested only Python 2 package to be built!') %
+                         str({'pkgname': pkgname,
+                              'py3_depends': py3_depends}))
+    if 'python2' not in meta and (
+            py2_pkgname is not None or py2_depends is not None):
+        raise ValueError(('Python 2 package metadata passed: %s\n' +
+                         'But requested only Python 3 package to be built!') %
+                         str({'py2_pkgname': py2_pkgname,
+                              'py2_depends': py2_depends}))
+
+    return meta
+
 class Packager(object):
 
-    def __init__(self, module, python=None,
-                 depends=None, py2_depends=None, py3_depends=None,
-                 mkdepends=None, backend=None,
-                 pkgbase=None, pkgname=None, py2_pkgname=None,
+    def __init__(self, module, meta,
+                 mkdepends=None, backend=None, depends=None,
+                 pkgbase=None,
                  email=None, name=None):
         """
         :type module: PyModule
         :type python: str
-        :type depends: list[str]
-        :type py2_depends: list[str]
-        :type py3_depends: list[str]
+        :type meta: dict[str, SplitMeta]
         :type mkdepends: list[str]
         :type backend: str
+        :type depends: list[str]
         :type pkgbase: str
-        :type pkgname: str
-        :type py2_pkgname: str
         :type name: str
         :type email: str
         """
@@ -440,81 +481,46 @@ class Packager(object):
         self.email = email
         self.pep517 = module.pep517
 
-        self.python = 'python2' if IS_PY2 else 'python'
-        if python in ['python', 'python2', 'multi']:
-            self.python = python
-
-        python_pkgname = 'python-{}'.format(module.name)
-        python2_pkgname = 'python2-{}'.format(module.name)
-
-        self.py_pkgname = pkgname or python_pkgname
-        self.py2_pkgname = py2_pkgname or python2_pkgname
-
+        self.splits = meta
         self.depends = []
-        self.py2_depends = ['python2']
-        self.py3_depends = ['python']
         self.mkdepends = []
 
-        if self.python == 'multi':
-            self.pkgname = [self.py_pkgname, self.py2_pkgname]
-            if py2_depends:
-                self.py2_depends += py2_depends
-            if py3_depends:
-                self.py3_depends += py3_depends
-        elif self.python == 'python2':
-            self.pkgname = [self.py2_pkgname]
-            self.depends += ['python2']
-        elif self.python == 'python':
-            self.pkgname = [self.py_pkgname]
-            self.depends += ['python']
-        self.mkdepends += self._get_mkdepends(backend)
+        if self.is_split:
+            for py in self.splits:
+                self.splits[py].update(
+                        pkgname = '%s-%s' % (py, module.name),
+                        depends = [py])
+        else:
+            self.depends += self.python_vers
 
-        if depends is not None:
-            self.depends += depends
-        if mkdepends is not None:
-            self.mkdepends += mkdepends
+        self.depends += depends
+        self.mkdepends += self._get_mkdepends(backend)
+        self.mkdepends += mkdepends if mkdepends is not None else []
 
         self.pkgbase = (
                 pkgbase if pkgbase is not None
-                else self.pkgname[0] if len(self.pkgname) == 1
-                else self.py_pkgname
+                else self.pkgname[0] if not self.is_split
+                else self.splits['python'].pkgname
             )
+
+    @property
+    def is_split(self):
+        return len(self.splits) > 1
+
+    @property
+    def python_vers(self):
+        return self.splits.keys()
+
+    @property
+    def pkgname(self):
+        return [m.pkgname for m in self.splits.values()]
 
     def _get_mkdepends(self, backend):
         modules = [backend]
         # Archwiki: [Python_package_guidelines#Standards_based_(PEP_517)]
         if self.pep517:
             modules += ['build', 'installer', 'wheel']
-        if self.python == 'multi':
-            versions = ['', '2']
-        elif self.python == 'python2':
-            versions = ['2']
-        elif self.python == 'python':
-            versions = ['']
-        else:
-            raise ValueError("Passed invalid python version %s" % self.python)
-        return ['python%s-%s' % (v, m) for m in modules for v in versions]
-
-    def _gen_build_func(self, python):
-        def gen_statements(py):
-            if python == 'multi' and py == 'python2':
-                suffix = '-python2'
-            else:
-                suffix = ''
-            build = BUILD_STATEMENTS if self.pep517 else BUILD_STATEMENTS_OLD
-            return build.format(
-                suffix=suffix,
-                python=py
-            )
-
-        if python == 'multi':
-            pylist = ['python', 'python2']
-        else:
-            pylist = [python]
-
-        return BUILD_FUNC.format(
-            statements='\n\n'.join(map(gen_statements, pylist))
-        )
+        return ['%s-%s' % (v, m) for m in modules for v in self.python_vers]
 
     def _steps(self):
         if self.name and self.email:
@@ -523,7 +529,7 @@ class Packager(object):
         pkg = self.module.source.split('/')[-1]
         src_folder = pkg.split(self.module.pkgver)[0] + self.module.pkgver
 
-        if self.python == 'multi':
+        if self.is_split:
             yield SPLIT_NAME.format(
                     pkgbase=self.pkgbase,
                     pkgname=iter_to_str(self.pkgname)
@@ -544,10 +550,15 @@ class Packager(object):
                 checksums=self.module.checksums
                 )
 
-        if self.python == 'multi':
+        if self.is_split:
             yield PREPARE_FUNC
 
-        yield self._gen_build_func(self.python)
+        build = BUILD_STATEMENTS if self.pep517 else BUILD_STATEMENTS_OLD
+
+        yield BUILD_FUNC.format(statements='\n\n'.join(
+            build.format(suffix=meta.suffix, python=py)
+            for (py, meta) in self.splits.items())
+        )
 
         install = INSTALL_STATEMENT if self.pep517 else INSTALL_STATEMENT_OLD
         if self.module.license_path:
@@ -559,35 +570,16 @@ class Packager(object):
         else:
             license_command = ''
 
-        if self.python == 'multi':
-            def package_func(python, py_pkgname, depends, suffix):
-                return PACKAGE_FUNC.format(
-                    sub_pkgname='_'+self.py_pkgname,
-                    dependencies=SUBPKG_DEPENDS.format(
-                        depends=iter_to_str(depends)),
-                    suffix=suffix,
-                    packaging_steps=join_nonempty([
-                        license_command.format(py_pkgname=py_pkgname),
-                        install.format(python=python)
-                    ])
-                )
-
-            yield package_func('python',
-                               self.py_pkgname,
-                               self.py3_depends,
-                               '')
-            yield package_func('python2',
-                               self.py2_pkgname,
-                               self.py2_depends,
-                               '-python2')
-        else:
+        for (py, meta) in self.splits.items():
             yield PACKAGE_FUNC.format(
-                sub_pkgname='',
-                dependencies='',
-                suffix='',
-                packaging_steps = join_nonempty([
-                    license_command.format(py_pkgname=self.pkgname[0]),
-                    install.format(python=self.python)
+                sub_pkgname=('_'+meta.pkgname) if self.is_split else '',
+                dependencies=SUBPKG_DEPENDS.format(
+                    depends=iter_to_str(meta.depends)) if meta.depends != []
+                    else '',
+                suffix=meta.suffix,
+                packaging_steps=join_nonempty([
+                    license_command.format(py_pkgname=meta.pkgname),
+                    install.format(python=py)
                 ])
             )
 
@@ -634,6 +626,7 @@ def parse_args(argv):
     argparser.add_argument(
             '-p', '--python-version',
             choices=['python', 'python2', 'multi'],
+            default='python2' if IS_PY2 else 'python',
             dest='python',
             help='The Python version on which the PKGBUILD bases')
     argparser.add_argument(
@@ -661,13 +654,13 @@ def parse_args(argv):
             '--python2-depends',
             dest='py2_depends',
             metavar='DEPENDS',
-            type=str, default=[], nargs='*',
+            type=str, default=None, nargs='*',
             help='Dependencies for the Python 2 package in a split package')
     argparser.add_argument(
             '--python3-depends',
             dest='py3_depends',
             metavar='DEPENDS',
-            type=str, default=[], nargs='*',
+            type=str, default=None, nargs='*',
             help='Dependencies for the Python 3 package in a split package')
     argparser.add_argument(
             '-m', '--make-depends',
@@ -729,6 +722,10 @@ def parse_args(argv):
 def main(args):
     args = parse_args(args)
 
+    meta = build_meta(**{key: vars(args)[key] for key in
+                         ['python', 'pkgname', 'py2_pkgname',
+                          'py3_depends', 'py2_depends']})
+
     try:
         module = PyModule(fetch_pymodule(args.module, args.module_version),
                           args.find_license,
@@ -759,9 +756,14 @@ def main(args):
                'module_version',
                'print_out',
                'find_license',
-               'pep517'])
+               'pep517',
+               'python',
+               'py2_depends',
+               'py3_depends',
+               'py2_pkgname',
+               'pkgname'])
 
-    pkgbuild = Packager(module, **opts).generate()
+    pkgbuild = Packager(module, meta, **opts).generate()
 
     if args.print_out:
         sys.stdout.write(pkgbuild)

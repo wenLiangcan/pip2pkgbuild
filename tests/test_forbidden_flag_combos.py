@@ -19,3 +19,11 @@ def test_nopep517_py2():
     main(['pip', '-o', '-p', 'python2', '--no-pep517'])
 def test_nopep517_multi():
     main(['pip', '-o', '-p', 'multi', '--no-pep517'])
+
+@pytest.mark.xfail
+def test_dep_without_py2():
+    main(['pip', '-o', '-p', 'python', '--py2-depends', 'pylint'])
+
+@pytest.mark.xfail
+def test_dep_without_py3():
+    main(['pip', '-o', '-p', 'python2', '--py3-depends', 'pylint'])
