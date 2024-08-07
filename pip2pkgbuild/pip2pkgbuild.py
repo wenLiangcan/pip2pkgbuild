@@ -633,7 +633,7 @@ def fetch_pymodule(name, version, find_license=False, pep517=False):
     return PyModule(info, find_license, pep517)
 
 
-def main():
+def parse_args(argv):
     argparser = argparse.ArgumentParser(prog=META['name'],
                                         description=META['description'])
     argparser.add_argument(
@@ -717,7 +717,7 @@ def main():
             default=None,
             help='Use old-style installation method unconditionally')
 
-    args = argparser.parse_args()
+    args = argparser.parse_args(argv)
 
     if bool(args.email) != bool(args.name):
         LOG.error('Must supply either both email and name or neither.')
@@ -735,6 +735,11 @@ def main():
     ):
         LOG.error('PEP517 based installation supports Python 3 packages only.')
         sys.exit(1)
+
+    return args
+
+def main(args):
+    args = parse_args(args)
 
     try:
         module = fetch_pymodule(args.module, args.module_version,
@@ -780,4 +785,4 @@ def main():
 
 
 if __name__ == '__main__':
-    main()
+    main(sys.argv[1:])
