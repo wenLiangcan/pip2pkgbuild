@@ -409,9 +409,11 @@ class CompressedFacade(object):
 
 class Packager(object):
 
-    def __init__(self, module, python=None, depends=None, py2_depends=None,
-                 py3_depends=None, mkdepends=None, pkgbase=None, pkgname=None,
-                 py2_pkgname=None, email=None, name=None):
+    def __init__(self, module, python=None,
+                 depends=None, py2_depends=None, py3_depends=None,
+                 mkdepends=None, backend=None,
+                 pkgbase=None, pkgname=None, py2_pkgname=None,
+                 email=None, name=None):
         """
         :type module: PyModule
         :type python: str
@@ -419,6 +421,7 @@ class Packager(object):
         :type py2_depends: list[str]
         :type py3_depends: list[str]
         :type mkdepends: list[str]
+        :type backend: str
         :type pkgbase: str
         :type pkgname: str
         :type py2_pkgname: str
@@ -457,7 +460,7 @@ class Packager(object):
         elif self.python == 'python':
             self.pkgname = [self.py_pkgname]
             self.depends += ['python']
-        self.mkdepends += self._get_mkdepends()
+        self.mkdepends += self._get_mkdepends(backend)
 
         if depends:
             self.depends += depends
@@ -467,12 +470,11 @@ class Packager(object):
         self.pkgbase = pkgbase or (
             self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
 
-    def _get_mkdepends(self):
+    def _get_mkdepends(self, backend):
+        modules = [backend]
         # Archwiki: [Python_package_guidelines#Standards_based_(PEP_517)]
         if self.pep517:
-            modules = ['build', 'installer', 'wheel']
-        else:
-            modules = ['setuptools']
+            modules += ['build', 'installer', 'wheel']
         if self.python == 'multi':
             versions = ['', '2']
         elif self.python == 'python2':
@@ -683,6 +685,11 @@ def main():
             dest='mkdepends',
             type=str, default=[], nargs='*',
             help='Packages to add to makedepends (needed for build only)')
+    argparser.add_argument(
+            '-s', '--build-backend',
+            dest='backend',
+            type=str, default='setuptools',
+            help='Build backend used by package (default guess: setuptools)')
     argparser.add_argument(
             '-o', '--print-out',
             action='store_true',
