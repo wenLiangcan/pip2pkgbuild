@@ -1,5 +1,9 @@
 #!/usr/bin/python
 
+"""
+Generate PKGBUILD file for a Python module from PyPI
+"""
+
 # json returns unicode strings
 # which causes problems for `dict_get` in python2
 from __future__ import unicode_literals
@@ -88,7 +92,7 @@ INSTALL_LICENSE = (
     '\n'
     'install -D -m644 {license_path}'
     '"${{{{pkgdir}}}}/usr/share/licenses/{{py_pkgname}}/{license_name}"'
-    )
+)
 
 INSTALL_STATEMENT = """\
     {python} -m installer --destdir="${{pkgdir}}" dist/*.whl"""
@@ -96,9 +100,9 @@ INSTALL_STATEMENT = """\
 INSTALL_STATEMENT_OLD = """\
     {python} setup.py install --root="${{pkgdir}}" --optimize=1 --skip-build"""
 
-SUBPKG_DEPENDS = '''
+SUBPKG_DEPENDS = """
     depends+=({depends})
-'''
+"""
 
 PACKAGE_FUNC = """\
 package{sub_pkgname}() {{{dependencies}
@@ -118,12 +122,12 @@ def known_licenses():
     else:
         args['encoding'] = 'utf-8'
     return fileinput.input(
-            files=('/usr/share/licenses/known_spdx_license_identifiers.txt'),
-            **args)
+        files=('/usr/share/licenses/known_spdx_license_identifiers.txt'),
+        **args)
 
 
 def search_in_iter(i, p):
-    """Find the first element matching the predicate in an iterable.
+    """Find the first element in an iterable. matching the predicate
 
     :type i: list[T]
     :type p: (T) -> bool
@@ -136,6 +140,14 @@ def search_in_iter(i, p):
 
 
 def search_in_iter_on(proj, i, p):
+    """Find the first element in an iterable whose projection satisfies the
+    predicate
+
+    :type proj: (U) -> (T)
+    :type i: list[U]
+    :type p: (T) -> bool
+    :rtype: U
+    """
     return search_in_iter(map(proj, i), lambda x: p(proj(x)))
 
 
@@ -145,7 +157,7 @@ def iter_to_str(i):
     :type i: list
     :rtype: str
     """
-    return ' '.join(map(lambda n: "'{}'".format(n), i))
+    return ' '.join(map("'{}'".format, i))
 
 
 def dict_get(d, key, default):
@@ -178,18 +190,25 @@ def removesuffix(s, suffix):
 
 
 class PythonModuleNotFoundError(Exception):
-    pass
+    """Thrown when the module can't be found on PyPI"""
 
 
 class PythonModuleVersionNotFoundError(Exception):
-    pass
+    """Thrown when the specified module version can't be found on PyPI"""
 
 
 class ParseModuleInfoError(Exception):
-    pass
+    """Thrown when the PyPI response is malformed"""
 
 
 class PyModule(object):
+    """
+    Metadata for a python module
+
+    Encapsulates the logic of parsing the PyPI JSON response and elaborating on
+    it.
+    """
+
     def __init__(self, json_data, find_license=False, pep517=False):
         """
         :type json_data: dict
@@ -203,21 +222,21 @@ class PyModule(object):
             self.pkgver = info['version']
             self.pkgdesc = info['summary']
             self.url = info['home_page']
-            self.license = self._get_license(info)
-            src_info = self._get_src_info(json_data['urls'])
+            self.license = self.__get_license(info)
+            src_info = self.__get_src_info(json_data['urls'])
             self.source = dict_get(src_info, 'url', '')
             self.checksums = dict_get(
-                    src_info.get('digests', {}), 'sha256', '')
+                src_info.get('digests', {}), 'sha256', '')
             self.license_path = None
             self.pep517 = pep517
             if find_license:
-                compressed_source = self._download_source(self.source)
-                self.license_path = self._find_license_path(compressed_source)
+                compressed_source = self.__download_source(self.source)
+                self.license_path = self.__find_license_path(compressed_source)
         except KeyError as e:
             raise ParseModuleInfoError(e)
 
     @staticmethod
-    def _download_source(url):
+    def __download_source(url):
         """Download compressed file at `url` into a compressed object.
 
         The url should contain the source of the python module.
@@ -256,7 +275,7 @@ class PyModule(object):
         return compressed_facade
 
     @staticmethod
-    def _search_compressed_fille(compressed_source, match):
+    def __search_compressed_file(compressed_source, match):
         """Shallow depth first sarching in compressed file
 
         :type compressed_source: CompressedFacade
@@ -283,7 +302,7 @@ class PyModule(object):
                 return matched
         return None
 
-    def _find_license_path(self, compressed_source):
+    def __find_license_path(self, compressed_source):
         """Determine whether the package source contains a physical license.
 
         :type compressed_source: CompressedFacade
@@ -308,44 +327,46 @@ class PyModule(object):
                 return ''.join(match.group(0).split('/')[1:])
             return None
 
-        match = self._search_compressed_fille(compressed_source, match_license)
+        match = self.__search_compressed_file(compressed_source, match_license)
         if match is None:
             LOG.warning('Could not find license file.')
         return match
 
     # https://wiki.archlinux.org/index.php/PKGBUILD#license
     @staticmethod
-    def _get_license(info):
+    def __get_license(info):
         """
         :type info: dict
         :rtype: str
         """
         def find_known_licenses(p):
             return search_in_iter_on(
-                    lambda l: removesuffix(l.lower(), ' license'),
-                    known_licenses(), p)
+                lambda lic: removesuffix(lic.lower(), ' license'),
+                known_licenses(), p)
 
-        license_ = find_known_licenses(
+        lic = find_known_licenses(
             lambda recg: recg == dict_get(info, 'license', ''))
 
-        if license_ is None:
+        if lic is None:
             license_str = search_in_iter(
                 dict_get(info, 'classifiers', []),
                 lambda clsf: clsf.startswith('License'))
 
             if license_str is None:
-                license_ = 'unknown'
+                lic = 'unknown'
             else:
                 license_str = license_str.split('::')[-1].strip()
-                license_ = find_known_licenses(
+                lic = find_known_licenses(
                     lambda recg: recg in license_str)
-                if license_ is None:
-                    license_ = 'custom:{}'.format(license_str)
-        return license_
+                if lic is None:
+                    lic = 'custom:{}'.format(license_str)
+        return lic
 
     @staticmethod
-    def _get_src_info(urls):
+    def __get_src_info(urls):
         """
+        Get supported source url from an iterable of urls
+
         :type urls: list[dict]
         :rtype: dict
         """
@@ -355,24 +376,15 @@ class PyModule(object):
             return {}
 
         info = search_in_iter(
-                urls,
-                lambda u: dict_get(u, 'url', '').endswith('.tar.gz'))
+            urls,
+            lambda u: dict_get(u, 'url', '').endswith('.tar.gz'))
         if info is None:
             info = search_in_iter(
-                    urls,
-                    lambda u: not dict_get(u, 'url', '').endswith('.whl'))
+                urls,
+                lambda u: not dict_get(u, 'url', '').endswith('.whl'))
         if info is None:
             info = urls[0]
         return info
-
-    def _get_source(self, url):
-        """
-        :type url: str
-        :rtype: str
-        """
-        ext = url.split(self.pkgver)[-1]
-        return '${_module}-${pkgver}' + ext + '::' + url
-
 
 class CompressedFacade(object):
     """Unify the `tarfile` and `zipfile` interface."""
@@ -408,7 +420,12 @@ class CompressedFacade(object):
                     name in self.obj.namelist() if not name.endswith('/')]
 
 
-class Packager(object):
+class Pkgbuild(object):
+    """
+    Representation of a PKGBUILD
+
+    Encapsulates the metadata-to-PKGBUILD logic
+    """
 
     def __init__(self, module, python=None,
                  depends=None, py2_depends=None, py3_depends=None,
@@ -461,17 +478,27 @@ class Packager(object):
         elif self.python == 'python':
             self.pkgname = [self.py_pkgname]
             self.depends += ['python']
-        self.mkdepends += self._get_mkdepends(backend)
+        self.mkdepends += self.__get_mkdepends(backend)
 
-        if depends:
+        if depends is not None:
             self.depends += depends
-        if mkdepends:
+        if mkdepends is not None:
             self.mkdepends += mkdepends
 
-        self.pkgbase = pkgbase or (
-            self.pkgname[0] if len(self.pkgname) == 1 else self.py_pkgname)
+        self.pkgbase = (
+                pkgbase if pkgbase is not None
+                else self.pkgname[0] if len(self.pkgname) == 1
+                else self.py_pkgname
+            )
 
-    def _get_mkdepends(self, backend):
+    def __get_mkdepends(self, backend):
+        """
+        Expand the makedepends given -- get the package corresponding to the
+        build backend, list the pep517 packages if requested.
+
+        :param str backend: The build backend used by the module
+        """
+
         modules = [backend]
         # Archwiki: [Python_package_guidelines#Standards_based_(PEP_517)]
         if self.pep517:
@@ -482,13 +509,11 @@ class Packager(object):
             versions = ['2']
         elif self.python == 'python':
             versions = ['']
-        mkdepends = []
-        for m in modules:
-            for v in versions:
-                mkdepends.append('python' + v + '-' + m)
-        return mkdepends
+        else:
+            raise ValueError("Passed invalid python version %s" % self.python)
+        return ['python%s-%s' % (v, m) for m in modules for v in versions]
 
-    def _gen_build_func(self, python):
+    def __gen_build_func(self, python):
         def gen_statements(py):
             if python == 'multi' and py == 'python2':
                 suffix = '-python2'
@@ -516,9 +541,9 @@ class Packager(object):
         pkgbuild = []
 
         if self.name and self.email:
-            maintainer_line = MAINTAINER_LINE.format(
-                name=self.name, email=self.email)
-            pkgbuild.append(maintainer_line)
+            pkgbuild.append(MAINTAINER_LINE.format(
+                name=self.name, email=self.email
+                ))
 
         pkg = self.module.source.split('/')[-1]
         src_folder = pkg.split(self.module.pkgver)[0] + self.module.pkgver
@@ -526,12 +551,14 @@ class Packager(object):
         if self.python == 'multi':
             pkgbuild.append(SPLIT_NAME.format(
                 pkgbase=self.pkgbase,
-                pkgname=iter_to_str(self.pkgname)))
+                pkgname=iter_to_str(self.pkgname)
+                ))
         else:
             pkgbuild.append(SINGLE_NAME.format(
-                pkgname=iter_to_str(self.pkgname)))
+                pkgname=iter_to_str(self.pkgname)
+                ))
 
-        headers = HEADERS.format(
+        pkgbuild.append(HEADERS.format(
             module=self.module.module,
             src_folder=src_folder,
             pkgver=self.module.pkgver,
@@ -542,9 +569,7 @@ class Packager(object):
             license=self.module.license,
             source=self.module.source,
             checksums=self.module.checksums
-        )
-
-        pkgbuild.append(headers)
+        ))
 
         install = INSTALL_STATEMENT if self.pep517 else INSTALL_STATEMENT_OLD
         if self.module.license_path:
@@ -556,60 +581,55 @@ class Packager(object):
         else:
             license_command = ''
 
-        build_fun = self._gen_build_func(self.python)
+        build_fun = self.__gen_build_func(self.python)
 
         if self.python == 'multi':
-            packaging_steps = join_nonempty([
-                license_command.format(py_pkgname=self.py_pkgname),
-                install.format(python='python')
-            ])
-            package_func = PACKAGE_FUNC.format(
-                sub_pkgname='_'+self.py_pkgname,
-                dependencies=SUBPKG_DEPENDS.format(
-                    depends=iter_to_str(self.py3_depends)),
-                suffix='',
-                packaging_steps=packaging_steps
-            )
+            def package_func(python, py_pkgname, depends, suffix):
+                return PACKAGE_FUNC.format(
+                    sub_pkgname='_'+self.py_pkgname,
+                    dependencies=SUBPKG_DEPENDS.format(
+                        depends=iter_to_str(depends)),
+                    suffix=suffix,
+                    packaging_steps=join_nonempty([
+                        license_command.format(py_pkgname=py_pkgname),
+                        install.format(python=python)
+                    ])
+                )
 
-            py2_packaging_steps = join_nonempty([
-                license_command.format(py_pkgname=self.py2_pkgname),
-                install.format(python='python2')
-            ])
-            py2_package_func = PACKAGE_FUNC.format(
-                sub_pkgname='_'+self.py2_pkgname,
-                dependencies=SUBPKG_DEPENDS.format(
-                    depends=iter_to_str(self.py2_depends)),
-                suffix='-python2',
-                packaging_steps=py2_packaging_steps
-            )
-
-            pkgbuild += [PREPARE_FUNC,
-                         build_fun,
-                         package_func,
-                         py2_package_func]
+            pkgbuild += [
+                PREPARE_FUNC,
+                build_fun,
+                package_func('python',
+                             self.py_pkgname,
+                             self.py3_depends,
+                             ''),
+                package_func('python2',
+                             self.py2_pkgname,
+                             self.py2_depends,
+                             '-python2')
+                ]
         else:
-            packaging_steps = join_nonempty([
-                license_command.format(py_pkgname=self.pkgname[0]),
-                install.format(python=self.python)
-            ])
-            package_func = PACKAGE_FUNC.format(
-                sub_pkgname='',
-                dependencies='',
-                suffix='',
-                packaging_steps=packaging_steps
-            )
-            pkgbuild += [build_fun, package_func]
+            pkgbuild += [
+                build_fun,
+                PACKAGE_FUNC.format(
+                    sub_pkgname='',
+                    dependencies='',
+                    suffix='',
+                    packaging_steps = join_nonempty([
+                        license_command.format(py_pkgname=self.pkgname[0]),
+                        install.format(python=self.python)
+                    ])
+                )
+            ]
 
         return '\n'.join(pkgbuild)
 
 
-def fetch_pymodule(name, version, find_license=False, pep517=False):
+def fetch_pymodule(name, version):
     """
     :type name: str
     :type version: str
-    :type find_license: bool
-    :type pep517: bool
-    :rtype: PyModule
+    :rtype: dict
     """
     def fetch_json(url):
         return json.loads(urlopen(url).read().decode('utf-8'))
@@ -620,102 +640,106 @@ def fetch_pymodule(name, version, find_license=False, pep517=False):
         if version:
             if info['releases'].get(version) is None:
                 raise PythonModuleVersionNotFoundError(
-                        '{} {}'.format(name, version))
-            else:
-                url = VERSION_MODULE_JSON.format(name=name, version=version)
-                info = fetch_json(url)
+                    '{} {}'.format(name, version))
+            url = VERSION_MODULE_JSON.format(name=name, version=version)
+            info = fetch_json(url)
 
     except HTTPError as e:
         if e.code == 404:
             raise PythonModuleNotFoundError('{}'.format(name))
-        else:
-            raise e
-    return PyModule(info, find_license, pep517)
+        raise e
+    return info
 
 
 def parse_args(argv):
+    """
+    Argument parsing logic
+
+    Separated to clarify the structure of main.
+    """
+
     argparser = argparse.ArgumentParser(prog=META['name'],
                                         description=META['description'])
     argparser.add_argument(
-            'module',
-            help='The Python module name')
+        'module',
+        help='The Python module name')
     argparser.add_argument(
-            '-v', '--module-version',
-            default='',
-            help='Use the specified version of the Python module')
+        '-v', '--module-version',
+        default='',
+        help='Use the specified version of the Python module')
     argparser.add_argument(
-            '-p', '--python-version',
-            choices=['python', 'python2', 'multi'],
-            dest='python',
-            help='The Python version on which the PKGBUILD bases')
+        '-p', '--python-version',
+        choices=['python', 'python2', 'multi'],
+        dest='python',
+        help='The Python version on which the PKGBUILD bases')
     argparser.add_argument(
-            '-b', '--package-basename',
-            type=str,
-            dest='pkgbase',
-            help='The value for pkgbase. '
-            + 'Default: the first value in pkgname')
+        '-b', '--package-basename',
+        type=str,
+        dest='pkgbase',
+        help='The value for pkgbase. '
+        + 'Default: the first value in pkgname')
     argparser.add_argument(
-            '-n', '--package-name',
-            type=str,
-            dest='pkgname',
-            help='The value for pkgname. '
-            + 'If the package is split, pkgname of the Python 3 package')
+        '-n', '--package-name',
+        type=str,
+        dest='pkgname',
+        help='The value for pkgname. '
+        + 'If the package is split, pkgname of the Python 3 package')
     argparser.add_argument(
-            '--python2-package-name',
-            type=str,
-            dest='py2_pkgname',
-            help='The pkgname of the Python 2 package')
+        '--python2-package-name',
+        type=str,
+        dest='py2_pkgname',
+        help='The pkgname of the Python 2 package')
     argparser.add_argument(
-            '-d', '--depends',
-            type=str, default=[], nargs='*',
-            help='Dependencies for the whole PKGBUILD')
+        '-d', '--depends',
+        type=str, default=[], nargs='*',
+        help='Dependencies for the whole PKGBUILD')
     argparser.add_argument(
-            '--python2-depends',
-            dest='py2_depends',
-            metavar='DEPENDS',
-            type=str, default=[], nargs='*',
-            help='Dependencies for the Python 2 package in a split package')
+        '--python2-depends',
+        dest='py2_depends',
+        metavar='DEPENDS',
+        type=str, default=[], nargs='*',
+        help='Dependencies for the Python 2 package in a split package')
     argparser.add_argument(
-            '--python3-depends',
-            dest='py3_depends',
-            metavar='DEPENDS',
-            type=str, default=[], nargs='*',
-            help='Dependencies for the Python 3 package in a split package')
+        '--python3-depends',
+        dest='py3_depends',
+        metavar='DEPENDS',
+        type=str, default=[], nargs='*',
+        help='Dependencies for the Python 3 package in a split package')
     argparser.add_argument(
-            '-m', '--make-depends',
-            dest='mkdepends',
-            type=str, default=[], nargs='*',
-            help='Packages to add to makedepends (needed for build only)')
+        '-m', '--make-depends',
+        dest='mkdepends',
+        type=str, default=[], nargs='*',
+        help='Packages to add to makedepends (needed for build only)')
     argparser.add_argument(
-            '-s', '--build-backend',
-            dest='backend',
-            type=str, default='setuptools',
-            help='Build backend used by package (default guess: setuptools)')
+        '-s', '--build-backend',
+        dest='backend',
+        type=str, default='setuptools',
+        help='Build backend used by package (default guess: setuptools)')
     argparser.add_argument(
-            '-o', '--print-out',
-            action='store_true',
-            help='Print to stdout rather than saving to PKGBUILD file')
+        '-o', '--print-out',
+        action='store_true',
+        help='Print to stdout rather than saving to PKGBUILD file')
     argparser.add_argument(
-            '-V', '--version',
-            action='version', version='%(prog)s {}'.format(META['version']))
+        '-V', '--version',
+        action='version', version='%(prog)s {}'.format(META['version']))
     argparser.add_argument(
-            '-l', '--find-license',
-            action='store_true', default=False,
-            help='Try to find license file in source files')
+        '-l', '--find-license',
+        action='store_true', default=False,
+        help='Try to find license file in source files')
     argparser.add_argument(
-            '--name', dest='name', default=None,
-            help='Name for the package maintainer line')
+        '--name', dest='name', default=None,
+        help='Name for the package maintainer line')
     argparser.add_argument(
-            '--email', dest='email', default=None,
-            help='Email for the package maintainer line')
+        '--email', dest='email', default=None,
+        help='Email for the package maintainer line')
     argparser.add_argument(
-            '--pep517', dest='pep517', action='store_true',
-            default=None,
-            help='Prefer PEP517 based installation method if supported')
+        '--pep517', dest='pep517', action='store_true',
+        default=None,
+        help='Prefer PEP517 based installation method if supported')
     argparser.add_argument(
-            '--no-pep517', dest='pep517', action='store_false',
-            default=None,
-            help='Use old-style installation method unconditionally')
+        '--no-pep517', dest='pep517', action='store_false',
+        default=None,
+        help='Use old-style installation method unconditionally')
 
     args = argparser.parse_args(argv)
 
@@ -730,8 +754,8 @@ def parse_args(argv):
             args.pep517 = True
 
     if args.pep517 and (
-            (args.python is None and IS_PY2)
-            or args.python == 'multi' or args.python == 'python2'
+        (args.python is None and IS_PY2)
+        or args.python == 'multi' or args.python == 'python2'
     ):
         LOG.error('PEP517 based installation supports Python 3 packages only.')
         sys.exit(1)
@@ -740,23 +764,25 @@ def parse_args(argv):
 
 
 def main(args=sys.argv):
+    """The main function"""
+
     args = parse_args(args[1:])
 
     try:
-        module = fetch_pymodule(args.module, args.module_version,
-                                args.find_license,
-                                args.pep517)
+        module = PyModule(fetch_pymodule(args.module, args.module_version),
+                          args.find_license,
+                          args.pep517)
     except PythonModuleNotFoundError as e:
-        LOG.error('Python module not found: {}'.format(e))
+        LOG.error('Python module not found: %s', e)
         sys.exit(0)
     except PythonModuleVersionNotFoundError as e:
-        LOG.error('Python module version not found: {}'.format(e))
+        LOG.error('Python module version not found: %s', e)
         sys.exit(0)
     except ParseModuleInfoError as e:
-        LOG.error('Failed to parse Python module information: {}'.format(e))
+        LOG.error('Failed to parse Python module information: %s', e)
         sys.exit(0)
 
-    def get_options(args, deletes):
+    def filter_options(args, deletes):
         """
         :type args: argparse.Namespace
         :type deletes: list[str]
@@ -767,22 +793,21 @@ def main(args=sys.argv):
             del opts[k]
         return opts
 
-    opts = get_options(
+    opts = filter_options(
         args, ['module',
                'module_version',
                'print_out',
                'find_license',
                'pep517'])
-    packager = Packager(module, **opts)
-    pkgbuild = packager.generate()
+
+    pkgbuild = Pkgbuild(module, **opts).generate()
 
     if args.print_out:
         sys.stdout.write(pkgbuild)
     else:
-        with open('PKGBUILD', 'w') as f:
+        with open('PKGBUILD', 'w', encoding='utf-8') as f:
             f.write(pkgbuild)
-            LOG.info('Successfully generated PKGBUILD under {}'
-                     .format(os.getcwd()))
+            LOG.info('Successfully generated PKGBUILD under %s', os.getcwd())
 
 
 if __name__ == '__main__':
