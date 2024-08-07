@@ -702,14 +702,25 @@ def main():
             help='Email for the package maintainer line')
     argparser.add_argument(
             '--pep517', dest='pep517', action='store_true',
-            default=False if IS_PY2 else True,
+            default=None,
             help='Prefer PEP517 based installation method if supported')
+    argparser.add_argument(
+            '--no-pep517', dest='pep517', action='store_false',
+            default=None,
+            help='Use old-style installation method unconditionally')
 
     args = argparser.parse_args()
 
     if bool(args.email) != bool(args.name):
         LOG.error('Must supply either both email and name or neither.')
         sys.exit(1)
+
+    if args.pep517 is None:
+        if IS_PY2 or args.python == 'multi' or args.python == 'python2':
+            args.pep517 = False
+        elif not IS_PY2 or args.python == 'python3':
+            args.pep517 = True
+
     if args.pep517 and (
             (args.python is None and IS_PY2)
             or args.python == 'multi' or args.python == 'python2'
