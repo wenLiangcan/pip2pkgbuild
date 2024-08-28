@@ -739,8 +739,8 @@ def parse_args(argv):
     return args
 
 
-def main(args):
-    args = parse_args(args)
+def main(args=sys.argv):
+    args = parse_args(args[1:])
 
     try:
         module = fetch_pymodule(args.module, args.module_version,
@@ -786,4 +786,4 @@ def main(args):
 
 
 if __name__ == '__main__':
-    main(sys.argv[1:])
+    main()
